@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Well Analysis - Upload</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+  <div class="container py-4">
+    <h1 class="mb-3">Well Analysis</h1>
+    <p class="text-muted">Upload the sensor CSV (e.g., SKW-18.csv) and optionally the daily production CSV.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="alert alert-warning">
+          {% for msg in messages %}
+            <div>{{ msg }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form class="card p-3" action="{{ url_for('analyze') }}" method="post" enctype="multipart/form-data">
+      <div class="mb-3">
+        <label for="well_name" class="form-label">Well Name</label>
+        <input type="text" class="form-control" id="well_name" name="well_name" placeholder="SKW-18" required>
+      </div>
+
+      <div class="mb-3">
+        <label for="sensor_csv" class="form-label">Sensor CSV (required)</label>
+        <input class="form-control" type="file" id="sensor_csv" name="sensor_csv" accept=".csv" required>
+        <div class="form-text">Columns expected: Location, UWI, Reading Time, Average Amps (A) (Raw), Drive Frequency (Hz) (Raw), Intake Pressure (psi) (Raw), Discharge Pressure (psi) (Raw), Intake Temperature (F) (Raw), Motor Temperature (F) (Raw), Vibration (gravit) (Raw)</div>
+      </div>
+
+      <div class="mb-3">
+        <label for="prod_csv" class="form-label">Production CSV (optional)</label>
+        <input class="form-control" type="file" id="prod_csv" name="prod_csv" accept=".csv">
+        <div class="form-text">Daily production with columns like Date, WC (watercut)</div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Analyze</button>
+        <a class="btn btn-outline-secondary" href="https://github.com/" target="_blank">Help</a>
+      </div>
+    </form>
+  </div>
+</body>
+</html>
