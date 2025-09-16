@@ -167,25 +167,20 @@ class WellAnalysisPipeline:
             if isinstance(X, np.ndarray) and hasattr(model, 'feature_names_in_'):
                 X = pd.DataFrame(X, columns=model.feature_names_in_)
             
-            # Handle missing values
+            # Handle missing values safely (avoid shape mismatch when a column is all-NaN)
             if isinstance(X, pd.DataFrame) and X.isna().any().any():
                 logger.warning("Input contains NaN values. Imputing with column means.")
-                
-                # Create a mask to remember which columns had NaNs
                 cols_with_nan = X.columns[X.isna().any()].tolist()
-                
                 if cols_with_nan:
-                    # Initialize imputer with mean strategy
-                    imputer = SimpleImputer(strategy='mean')
-                    
-                    # Only transform columns with NaNs
-                    X_imputed = imputer.fit_transform(X[cols_with_nan])
-                    
-                    # Update the original DataFrame with imputed values
-                    if isinstance(X, pd.DataFrame):
-                        X[cols_with_nan] = X_imputed
-                    else:
-                        X = np.hstack([X, X_imputed]) if X.ndim > 1 else X_imputed.reshape(-1)
+                    cols_all_nan = [c for c in cols_with_nan if X[c].isna().all()]
+                    cols_some_nan = [c for c in cols_with_nan if c not in cols_all_nan]
+                    # Fill all-NaN columns with 0.0 (or a safe default)
+                    for c in cols_all_nan:
+                        X[c] = 0.0
+                    if cols_some_nan:
+                        imputer = SimpleImputer(strategy='mean')
+                        X_imputed = imputer.fit_transform(X[cols_some_nan])
+                        X.loc[:, cols_some_nan] = X_imputed
             
             # Handle feature name validation
             try:
@@ -261,74 +256,130 @@ class WellAnalysisPipeline:
         """
         # For failure prediction, we need to map our columns to the model's expected features
         if model_name == 'failure_prediction':
-            # Define the mapping between our column names and the model's expected feature names
-            feature_mapping = {
-                'A': 'Average Amps (A) (Raw)',
-                'IP': 'Intake Pressure (psi) (Raw)',
-                'DP': 'Discharge Pressure (psi) (Raw)',
-                'IT': 'Intake Temperature (F) (Raw)',
-                'MT': 'Motor Temperature (F) (Raw)',
-                'V': 'Vibration (gravit) (Raw)',
-                'R': 'Virtual Rate (BFPD) (Raw)'  # R stands for Rate
-            }
-            
-            # Create a new DataFrame with the expected column names
-            features = pd.DataFrame()
-            
-            # Map the columns from the input data to the expected feature names
-            for model_col, data_col in feature_mapping.items():
-                if data_col in data.columns:
-                    features[model_col] = data[data_col]
-                else:
-                    # If the column is missing, fill with zeros and log a warning
-                    features[model_col] = 0.0
-                    logger.warning(f"Filled missing column '{data_col}' with zeros")
-            
-            # Ensure we have all expected columns in the correct order
-            expected_cols = ['A', 'IP', 'DP', 'IT', 'MT', 'V', 'R']
-            for col in expected_cols:
-                if col not in features.columns:
-                    features[col] = 0.0
-                    logger.warning(f"Added missing expected column '{col}' with zeros")
-            
-            # Reorder columns to match the expected order
-            features = features[expected_cols]
-            
-        # For other models, use the standard feature extraction
-        else:
-            # Get the required feature columns for this model
-            required_cols = FEATURE_COLUMNS[model_name]
-            
-            # Log available and required columns for debugging
-            logger.debug(f"Available columns in data: {data.columns.tolist()}")
-            logger.debug(f"Required columns for {model_name}: {required_cols}")
-            
-            # Check which required columns are missing
-            missing_cols = [col for col in required_cols if col not in data.columns]
-            
-            if missing_cols:
-                # Log a warning about missing columns but continue with available ones
-                logger.warning(f"Missing columns for {model_name}: {missing_cols}. Using available columns.")
-                
-                # Only keep columns that exist in the data
-                available_cols = [col for col in required_cols if col in data.columns]
-                
-                if not available_cols:
-                    raise ValueError(f"No required columns found in data for {model_name}")
-                    
-                logger.info(f"Using available columns for {model_name}: {available_cols}")
-                features = data[available_cols].copy()
-                
-                # Fill missing columns with zeros (you might want to use a different strategy)
-                for col in missing_cols:
-                    features[col] = 0.0
-                    logger.warning(f"Filled missing column '{col}' with zeros")
+            # Prefer the model's declared feature order if available (short codes from slopes)
+            model_feature_names = None
+            if model_name in self.models:
+                m = self.models[model_name]
+                if hasattr(m, 'feature_names_in_'):
+                    model_feature_names = list(m.feature_names_in_)
+                elif hasattr(m, 'best_estimator_') and hasattr(m.best_estimator_, 'feature_names_in_'):
+                    model_feature_names = list(m.best_estimator_.feature_names_in_)
+
+            # If df11 (slopes) is passed in 'data', use those columns directly by model order
+            if model_feature_names is not None and all(c in data.columns for c in model_feature_names):
+                features = data[model_feature_names].copy()
+                logger.debug(f"failure_prediction using model feature order: {model_feature_names}")
             else:
-                # All required columns are present
-                features = data[required_cols].copy()
-            
-            # Ensure the column order matches the expected order
-            features = features[required_cols]
+                # Fallback to the canonical slope set
+                slope_short = ['A', 'IP', 'DP', 'IT', 'MT', 'V', 'R']
+                available = [c for c in slope_short if c in data.columns]
+                if not available:
+                    # Map from raw to short if slopes not provided
+                    feature_mapping = {
+                        'A': 'Average Amps (A) (Raw)',
+                        'IP': 'Intake Pressure (psi) (Raw)',
+                        'DP': 'Discharge Pressure (psi) (Raw)',
+                        'IT': 'Intake Temperature (F) (Raw)',
+                        'MT': 'Motor Temperature (F) (Raw)',
+                        'V': 'Vibration (gravit) (Raw)',
+                        'R': 'Virtual Rate (BFPD) (Raw)'
+                    }
+                    features = pd.DataFrame()
+                    for k, src in feature_mapping.items():
+                        if src in data.columns:
+                            features[k] = data[src]
+                        else:
+                            features[k] = 0.0
+                            logger.warning(f"Filled missing column '{src}' with zeros for failure_prediction")
+                    order = model_feature_names if model_feature_names is not None else slope_short
+                    missing = [c for c in order if c not in features.columns]
+                    for c in missing:
+                        features[c] = 0.0
+                    features = features[order]
+                else:
+                    order = model_feature_names if model_feature_names is not None else slope_short
+                    # Use only the intersection, preserving model order
+                    use_cols = [c for c in order if c in data.columns]
+                    features = data[use_cols].copy()
+                    # Backfill any missing expected cols with zeros to avoid predict errors
+                    for c in order:
+                        if c not in features.columns:
+                            features[c] = 0.0
+                    features = features[order]
+
+        else:
+            # If the model carries its own feature names (e.g., short names 'A','IP','IT','MT'), respect that
+            model_feature_names = None
+            if model_name in self.models:
+                m = self.models[model_name]
+                if hasattr(m, 'feature_names_in_'):
+                    model_feature_names = list(m.feature_names_in_)
+                elif hasattr(m, 'best_estimator_') and hasattr(m.best_estimator_, 'feature_names_in_'):
+                    model_feature_names = list(m.best_estimator_.feature_names_in_)
+
+            short_set = {'A', 'IP', 'DP', 'IT', 'MT', 'V', 'R'}
+            if model_feature_names is not None and set(model_feature_names).issubset(short_set):
+                # Build features by mapping from raw columns to short names
+                mapping = {
+                    'A': 'Average Amps (A) (Raw)',
+                    'IP': 'Intake Pressure (psi) (Raw)',
+                    'DP': 'Discharge Pressure (psi) (Raw)',
+                    'IT': 'Intake Temperature (F) (Raw)',
+                    'MT': 'Motor Temperature (F) (Raw)',
+                    'V': 'Vibration (gravit) (Raw)',
+                    'R': 'Virtual Rate (BFPD) (Raw)'
+                }
+                cols = []
+                for k in model_feature_names:
+                    src = mapping.get(k)
+                    if src == 'Discharge Pressure (psi) (Raw)' and src not in data.columns and 'predicted_discharge_pressure' in data.columns:
+                        series = data['predicted_discharge_pressure']
+                        logger.info("Using predicted_discharge_pressure for DP feature")
+                    else:
+                        if src in data.columns:
+                            series = data[src]
+                        else:
+                            logger.warning(f"Filled missing column '{src}' with zeros for model {model_name}")
+                            series = pd.Series(np.zeros(len(data)), index=data.index)
+                    cols.append(series)
+                features = pd.concat(cols, axis=1)
+                features.columns = model_feature_names
+            else:
+                # Fallback to FEATURE_COLUMNS configuration
+                required_cols = FEATURE_COLUMNS[model_name]
+
+                # Log available and required columns for debugging
+                logger.debug(f"Available columns in data: {data.columns.tolist()}")
+                logger.debug(f"Required columns for {model_name}: {required_cols}")
+
+                missing_cols = [col for col in required_cols if col not in data.columns]
+
+                if missing_cols:
+                    logger.warning(f"Missing columns for {model_name}: {missing_cols}. Using available columns.")
+                    available_cols = [col for col in required_cols if col in data.columns]
+                    if not available_cols:
+                        raise ValueError(f"No required columns found in data for {model_name}")
+                    logger.info(f"Using available columns for {model_name}: {available_cols}")
+                    features = data[available_cols].copy()
+
+                    # Fill missing columns; for virtual_rate, inject predicted DP if needed
+                    for col in missing_cols:
+                        if (
+                            model_name == 'virtual_rate'
+                            and col == 'Discharge Pressure (psi) (Raw)'
+                            and 'predicted_discharge_pressure' in data.columns
+                        ):
+                            features[col] = data['predicted_discharge_pressure']
+                            logger.info("Filled missing 'Discharge Pressure (psi) (Raw)' with predicted_discharge_pressure for virtual_rate")
+                        else:
+                            features[col] = 0.0
+                            logger.warning(f"Filled missing column '{col}' with zeros")
+                else:
+                    # All required columns are present
+                    features = data[required_cols].copy()
+
+                # Ensure the column order matches the expected order
+                features = features[required_cols]
         
         # Log feature information
         logger.debug(f"Final feature columns for {model_name}: {features.columns.tolist()}")
@@ -396,6 +447,19 @@ class WellAnalysisPipeline:
             logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
             df_all = self._build_df_all_30min(self.data)
 
+            # Save 30-minute resampled DP and VR to compare with notebooks
+            try:
+                dp_col = 'Discharge Pressure (psi) (Raw)'
+                vr_col = 'Virtual Rate (BFPD) (Raw)'
+                if dp_col in df_all.columns:
+                    dp30_path = OUTPUT_DIR / f"{self.well_name}_discharge_pressure_30min.csv"
+                    df_all[['Reading Time', dp_col]].rename(columns={dp_col: 'discharge_pressure'}).to_csv(dp30_path, index=False)
+                if vr_col in df_all.columns:
+                    vr30_path = OUTPUT_DIR / f"{self.well_name}_virtual_rate_30min.csv"
+                    df_all[['Reading Time', vr_col]].rename(columns={vr_col: 'virtual_rate'}).to_csv(vr30_path, index=False)
+            except Exception as e:
+                logger.warning(f"Could not save 30-minute DP/VR CSVs: {e}")
+
             # 4. Compute per-window slopes over 30-minute windows (slopes_df equivalent)
             logger.info("4/4 - Computing 30-minute window slopes...")
             slopes_df = self._compute_window_slopes_30min(self.data)
@@ -411,6 +475,22 @@ class WellAnalysisPipeline:
                 for c in missing:
                     tmp[c] = 0.0
                 df11 = tmp[expected_cols].copy()
+
+            # Save X_predict_30menit.csv at project root to mirror notebook output
+            try:
+                project_root = Path(__file__).resolve().parents[1]
+                xpred_path = project_root / 'X_predict_30menit.csv'
+                df11.to_csv(xpred_path, index=False)
+                logger.info(f"Saved per-30-minute slopes to: {xpred_path}")
+                # Also save slopes with timestamps for traceability
+                slopes_with_ts = slopes_df[['Window_Start_Time']].copy()
+                for c in expected_cols:
+                    slopes_with_ts[c] = tmp[c] if 'tmp' in locals() and c in tmp.columns else (slopes_df[c] if c in slopes_df.columns else 0.0)
+                slopes_ts_path = project_root / 'slopes_df_30menit.csv'
+                slopes_with_ts.to_csv(slopes_ts_path, index=False)
+                logger.info(f"Saved slopes_df_30menit to: {slopes_ts_path}")
+            except Exception as e:
+                logger.warning(f"Could not save X_predict_30menit.csv: {e}")
 
             # 5. Failure Prediction on windowed slope features
             if df11 is None or len(df11) == 0:
@@ -517,7 +597,7 @@ class WellAnalysisPipeline:
         df_idx = df_idx.dropna(subset=['Reading Time']).set_index('Reading Time')
         # Align to :00 and :30 using origin='epoch' to snap to half-hour grid
         df_resampled = (
-            df_idx.resample('30T', origin='epoch')
+            df_idx.resample('30min', label='left', closed='left', origin='start_day')
                  .mean(numeric_only=True)
                  .reset_index()
         )
@@ -594,6 +674,9 @@ class WellAnalysisPipeline:
             out = out.merge(s, on='Window_Start_Time', how='left')
             out.rename(columns={'slope': short}, inplace=True)
 
+        # Slopes are per-second (as notebook uses linregress with seconds from window start)
+        logger.debug("Computed slopes per-second over 30-minute windows (no scaling)")
+
         return out
 
     def _assemble_failure_results(
@@ -653,15 +736,8 @@ class WellAnalysisPipeline:
                       .merge(df_all2, left_on='Window_Start_Time', right_on='Reading Time', how='left', suffixes=('', '_res'))
                       .merge(slopes_df2, on='Window_Start_Time', how='left', suffixes=('', '_slope')))
 
-            # Watercut rule mask by date
-            if getattr(self, 'df_wc', None) is not None and self.df_wc is not None and not self.df_wc.empty:
-                wc = self.df_wc.copy()
-                wc['Date'] = pd.to_datetime(wc['Date'], errors='coerce').dt.normalize()
-                merged['ws_date'] = merged['Window_Start_Time'].dt.normalize()
-                merged = merged.merge(wc[['Date', 'WC']], left_on='ws_date', right_on='Date', how='left')
-                mask_wc = merged['WC'].apply(lambda x: pd.notna(x) and np.isclose(float(x), 100.0, atol=1e-6))
-            else:
-                mask_wc = pd.Series(False, index=merged.index)
+            # Watercut override disabled per notebook requirement (only Low PI and Shut-in considered)
+            mask_wc = pd.Series(False, index=merged.index)
 
             # Shortcuts for columns (fillna with 0 for comparisons)
             amps = merged.get('Average Amps (A) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
@@ -689,25 +765,14 @@ class WellAnalysisPipeline:
             )
             mask_shutin = amps_zero & freq_zero & (other_zero | any_variation)
 
-            # EDP mask (all near-zero and no variation)
-            edp_conds = (
-                amps_zero & freq_zero &
-                np.isclose(rate, 0.0, atol=TOL) &
-                np.isclose(dp_s, 0.0, atol=TOL) &
-                np.isclose(it_s, 0.0, atol=TOL) &
-                np.isclose(mt_s, 0.0, atol=TOL) &
-                np.isclose(v_s, 0.0, atol=TOL) &
-                np.isclose(r_s, 0.0, atol=TOL)
-            )
-            mask_edp = edp_conds & (~any_variation)
+            # EDP override disabled per notebook requirement
+            mask_edp = pd.Series(False, index=merged.index)
 
             # Start from current predictions
             pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
 
-            # Apply rule priorities: WC (12) > Shut-in (11) > EDP (10)
-            pred_vec = np.where(mask_edp, 10, pred_vec)
+            # Apply only Shut-in override
             pred_vec = np.where(mask_shutin, 11, pred_vec)
-            pred_vec = np.where(mask_wc, 12, pred_vec)
 
             # Write back into out by aligning indices
             out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
@@ -716,6 +781,16 @@ class WellAnalysisPipeline:
             # Remap Status/Recommendation after overrides
             out['Status'] = out['Prediction'].apply(status_map)
             out['Recommendation'] = out['Prediction'].apply(recommendation_map)
+
+            # Restrict to only 'Low PI' and 'Shut-in'; map others to 'Running'
+            allowed = {'Low PI', 'Shut-in', 'Running'}
+            def restrict_status(s: str) -> str:
+                return s if s in allowed else 'Running'
+            out['Status'] = out['Status'].apply(restrict_status)
+            # Synchronize Prediction code with restricted Status
+            def code_from_status(s: str) -> int:
+                return 1 if s == 'Low PI' else (11 if s == 'Shut-in' else 0)
+            out['Prediction'] = out['Status'].apply(code_from_status)
 
         except Exception as e:
             logger.warning(f"Failed applying additional status rules: {e}")
@@ -771,6 +846,10 @@ class WellAnalysisPipeline:
         logger.info(f"Saving results to directory: {output_dir}")
         
         for model_name, predictions in results.items():
+            # The failure prediction has a dedicated saver; skip raw save here
+            if model_name == 'failure_prediction':
+                logger.info("Skipping raw save for failure_prediction (handled by _save_failure_results)")
+                continue
             try:
                 # Create output file with absolute path in home directory
                 output_file = os.path.join(output_dir, f"{self.well_name}_{model_name}_predictions.csv")
@@ -784,16 +863,29 @@ class WellAnalysisPipeline:
                     result_data['timestamp'] = self.data['Reading Time']
                 
                 # Handle 1D and 2D predictions
-                if predictions.ndim == 1:
+                if hasattr(predictions, 'ndim') and predictions.ndim == 1:
                     # For 1D arrays, use a single prediction column
                     result_data['prediction'] = predictions
-                else:
+                elif hasattr(predictions, 'ndim'):
                     # For 2D arrays, create a column for each prediction dimension
                     for i in range(predictions.shape[1]):
                         result_data[f'prediction_{i}'] = predictions[:, i]
+                else:
+                    # Fallback: wrap in a column
+                    result_data['prediction'] = np.asarray(predictions)
                 
                 # Create and save the DataFrame
                 result_df = pd.DataFrame(result_data)
+
+                # If timestamp exists but length mismatches predictions, drop timestamp to avoid errors
+                if 'timestamp' in result_df.columns and len(result_df['timestamp']) != len(result_df.drop(columns=['timestamp'])):
+                    logger.warning("Timestamp length does not match predictions; dropping timestamp from save")
+                    result_df = result_df.drop(columns=['timestamp'])
+
+                # Handle empty predictions gracefully
+                if result_df.shape[0] == 0:
+                    logger.warning(f"No predictions to save for {model_name}; skipping file write")
+                    continue
                 
                 # Convert timestamp to string if it's a datetime
                 if 'timestamp' in result_df.columns and hasattr(result_df['timestamp'].dtype, 'tz'):
@@ -848,6 +940,26 @@ class WellAnalysisPipeline:
             df_to_save = final_df[cols].copy() if all(c in final_df.columns for c in cols) else final_df.copy()
             df_to_save.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
             logger.info(f"Saved final failure results to: {output_file}")
+
+            # # Also save notebook-style prediction_results_30menit.csv at project root
+            # try:
+            #     project_root = Path(__file__).resolve().parents[1]
+            #     pred30_path = project_root / 'prediction_results_30menit.csv'
+            #     df_nb = df_to_save.copy()
+            #     # Add Date column normalized to date
+            #     if 'Window_Start_Time' in df_nb.columns:
+            #         dt = pd.to_datetime(df_nb['Window_Start_Time'], errors='coerce')
+            #         df_nb['Date'] = dt.dt.normalize().dt.strftime('%Y-%m-%d')
+            #     # Ensure exact column order
+            #     nb_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
+            #     for c in nb_cols:
+            #         if c not in df_nb.columns:
+            #             df_nb[c] = ''
+            #     df_nb = df_nb[nb_cols]
+            #     df_nb.to_csv(pred30_path, index=False, header=False, date_format='%Y-%m-%d %H:%M:%S')
+            #     logger.info(f"Saved notebook-style 30-minute predictions to: {pred30_path}")
+            # except Exception as e2:
+            #     logger.warning(f"Could not save prediction_results_30menit.csv: {e2}")
         except Exception as e:
             logger.error(f"Error saving final failure results: {e}")
 

@@ -106,6 +106,8 @@ def analyze():
         # Build 3-hour grouped summaries according to rules
         group_summaries = []
         detected_events = []
+        pie_all_b64 = None
+        pie_nonrun_b64 = None
         if pred_df is not None and not pred_df.empty and 'Window_Start_Time' in pred_df.columns and 'Status' in pred_df.columns:
             pdf = pred_df.copy()
             pdf['Window_Start_Time'] = pd.to_datetime(pdf['Window_Start_Time'], errors='coerce')
@@ -114,42 +116,83 @@ def analyze():
             pdf['group_start'] = pdf['Window_Start_Time'].dt.floor('3H')
             pdf['group_end'] = pdf['group_start'] + pd.Timedelta(hours=3)
 
-            # Function to pick dominant status per rules
+            # Function to pick dominant status per group (include 'Running')
+            # Tie-breaking: (1) global frequency within day; (2) severity priority; (3) default to 'Running' last
+            severity_priority = {
+                'Increase in Watercut': 3,
+                'Shut-in': 2,
+                'Electrical Downhole Problem': 1,
+                'Running': 0,
+            }
+
             def pick_dominant_status(group: pd.DataFrame) -> str:
-                # Ignore 'Running' to determine non-running count
-                non_running = group[group['Status'] != 'Running']
-                if len(non_running) < 3:
-                    return 'Running'
-                # Count within group
-                grp_counts = non_running['Status'].value_counts()
-                top_count = grp_counts.max()
-                top_statuses = grp_counts[grp_counts == top_count].index.tolist()
+                grp_counts = group['Status'].value_counts()
+                maxc = grp_counts.max()
+                top_statuses = grp_counts[grp_counts == maxc].index.tolist()
                 if len(top_statuses) == 1:
                     return top_statuses[0]
-                # Tie-breaker: most frequent over entire day among tied statuses
+                # Tie-break by global (same day) frequency
                 day = group['date'].iloc[0]
                 day_rows = pdf[pdf['date'] == day]
-                day_counts = day_rows[day_rows['Status'].isin(top_statuses) & (day_rows['Status'] != 'Running')]['Status'].value_counts()
-                if day_counts.empty:
-                    return 'Running'
-                winner = day_counts.idxmax()
+                day_counts = day_rows['Status'].value_counts()
+                # Reduce to tied statuses only
+                day_counts = day_counts[day_counts.index.isin(top_statuses)] if not day_counts.empty else pd.Series(dtype=int)
+                if not day_counts.empty:
+                    top_day = day_counts[day_counts == day_counts.max()].index.tolist()
+                else:
+                    top_day = top_statuses
+                if len(top_day) == 1:
+                    return top_day[0]
+                # Final tie-break by severity priority (default 0)
+                winner = max(top_day, key=lambda s: severity_priority.get(s, 0))
                 return winner
 
             # Apply per (date, group_start)
             groups = pdf.groupby(['date', 'group_start', 'group_end'], as_index=False)
+            dom_rows = []
             for (d, gs, ge), g in groups:
                 dominant = pick_dominant_status(g)
                 non_run_count = (g['Status'] != 'Running').sum()
-                summary = {
-                    'date': d.strftime('%Y-%m-%d'),
-                    'group_start': gs.strftime('%Y-%m-%d %H:%M:%S'),
-                    'group_end': ge.strftime('%Y-%m-%d %H:%M:%S'),
+                dom_rows.append({
+                    'date': d,
+                    'group_start': gs,
+                    'group_end': ge,
+                    'Dominant Status': dominant,
                     'non_running_count': int(non_run_count),
-                    'dominant_status': dominant,
+                })
+            # Build a DataFrame for charts and summaries
+            result_df = pd.DataFrame(dom_rows)
+            # Summaries for rendering
+            for _, r in result_df.iterrows():
+                summary = {
+                    'date': pd.to_datetime(r['date']).strftime('%Y-%m-%d'),
+                    'group_start': pd.to_datetime(r['group_start']).strftime('%Y-%m-%d %H:%M:%S'),
+                    'group_end': pd.to_datetime(r['group_end']).strftime('%Y-%m-%d %H:%M:%S'),
+                    'non_running_count': int(r['non_running_count']),
+                    'dominant_status': r['Dominant Status'],
                 }
                 group_summaries.append(summary)
-                if dominant != 'Running':
+                if r['Dominant Status'] != 'Running':
                     detected_events.append(summary)
+
+            # Pie charts
+            try:
+                status_counts = result_df['Dominant Status'].value_counts()
+                if not status_counts.empty:
+                    figp1, axp1 = plt.subplots(figsize=(6, 6))
+                    axp1.pie(status_counts, labels=status_counts.index, autopct='%1.1f%%', startangle=140)
+                    axp1.set_title('Distribution of Dominant Status (per 3-hour window)')
+                    axp1.axis('equal')
+                    pie_all_b64 = fig_to_base64(figp1)
+                status_counts_non = result_df[result_df['Dominant Status'] != 'Running']['Dominant Status'].value_counts()
+                if not status_counts_non.empty:
+                    figp2, axp2 = plt.subplots(figsize=(6, 6))
+                    axp2.pie(status_counts_non, labels=status_counts_non.index, autopct='%1.1f%%', startangle=140)
+                    axp2.set_title('Dominant Status Distribution (Non-Running Only)')
+                    axp2.axis('equal')
+                    pie_nonrun_b64 = fig_to_base64(figp2)
+            except Exception:
+                pass
 
         # Show top N rows to keep page light; full CSV is available on disk
         table_preview = None
@@ -169,7 +212,9 @@ def analyze():
             table_preview=table_preview,
             pred_csv_path=str(pred_csv),
             group_summaries=group_summaries,
-            detected_events=detected_events
+            detected_events=detected_events,
+            pie_all_b64=pie_all_b64,
+            pie_nonrun_b64=pie_nonrun_b64,
         )
 
     except Exception as e:

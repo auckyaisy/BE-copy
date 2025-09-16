@@ -25,16 +25,43 @@
           <div class="card-body">
             <ol class="mb-0">
               <li>Grouped every 3 hours (6 data points, each 30 minutes apart).</li>
-              <li>Ignore the "Running" status when determining the dominant status.</li>
-              <li>If there are 3 or more non-"Running" statuses within the 3-hour group, proceed with the prediction:
+              <li>Dominant status is the most frequent label in the 3-hour window (including "Running").</li>
+              <li>Tie-breaking:
                 <ul>
-                  <li>If one status appears most frequently, select it as the dominant status.</li>
-                  <li>If there's a tie, choose the one most frequent throughout the day (only among tied statuses).</li>
+                  <li>Most frequent over the same day among tied statuses.</li>
+                  <li>If still tied, severity priority: Increase in Watercut > Shut-in > Electrical Downhole Problem > Running.</li>
                 </ul>
               </li>
-              <li>If there are fewer than 3 non-"Running" statuses, classify the entire group as "Running".</li>
-              <li>When Amps and Freq are 0, and the slopes of IP, DP, IT, MT, and V are 0 within a tolerance, it is identified as EDP.</li>
+              <li>When Amps and Freq are 0, and the slopes of IP, DP, IT, MT, and V are ~0 (within tolerance), it is identified as EDP.</li>
             </ol>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <strong>Dominant Status Distribution</strong>
+          </div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <h6>All statuses</h6>
+                {% if pie_all_b64 %}
+                  <img class="plot" src="{{ pie_all_b64 }}" alt="Dominant status distribution (all)">
+                {% else %}
+                  <div class="alert alert-info mb-0">No data to render pie chart.</div>
+                {% endif %}
+              </div>
+              <div class="col-md-6">
+                <h6>Non-Running only</h6>
+                {% if pie_nonrun_b64 %}
+                  <img class="plot" src="{{ pie_nonrun_b64 }}" alt="Dominant status distribution (non-running)">
+                {% else %}
+                  <div class="alert alert-info mb-0">No non-Running windows detected.</div>
+                {% endif %}
+              </div>
+            </div>
           </div>
         </div>
       </div>
