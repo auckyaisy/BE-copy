@@ -38,6 +38,19 @@
         </div>
       </div>
 
+      {% if summary_text %}
+      <div class="col-12">
+        <div class="card">
+          <div class="card-header">
+            <strong>Summary & Recommendations</strong>
+          </div>
+          <div class="card-body">
+            <pre class="mb-0" style="white-space: pre-wrap;">{{ summary_text }}</pre>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
       <div class="col-12">
         <div class="card">
           <div class="card-header">
@@ -90,6 +103,8 @@
           </div>
         </div>
       </div>
+
+      
 
       <div class="col-12">
         <div class="card">

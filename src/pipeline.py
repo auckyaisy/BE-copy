@@ -429,19 +429,31 @@ class WellAnalysisPipeline:
             # store predicted to a separate column for downstream visibility
             self.data['predicted_discharge_pressure'] = discharge_pressure
 
-            # 2. Virtual Rate Prediction (Virtual Rate (BFPD) (Raw))
-            logger.info("2/4 - Running virtual rate prediction...")
-            virtual_rate = self.predict('virtual_rate')
-            results['virtual_rate'] = virtual_rate
-            self.data['Virtual Rate (BFPD) (Raw)'] = virtual_rate
-
-            # Apply template rule: if Amps==0 and Freq==0 then Virtual Rate = 0
-            if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
-                zero_mask = (
-                    (self.data['Average Amps (A) (Raw)'].fillna(0) == 0)
-                    & (self.data['Drive Frequency (Hz) (Raw)'].fillna(0) == 0)
-                )
-                self.data.loc[zero_mask, 'Virtual Rate (BFPD) (Raw)'] = 0.0
+            # 2. Virtual Rate: only predict if missing; otherwise keep existing VR and store prediction separately for reference
+            logger.info("2/4 - Virtual rate handling...")
+            vr_col = 'Virtual Rate (BFPD) (Raw)'
+            need_predict_vr = (vr_col not in self.data.columns) or (self.data[vr_col].isna().all())
+            if need_predict_vr:
+                logger.info("Virtual Rate column missing/empty; running prediction")
+                virtual_rate = self.predict('virtual_rate')
+                results['virtual_rate'] = virtual_rate
+                self.data[vr_col] = virtual_rate
+                # Apply rule: if Amps==0 and Freq==0 then Virtual Rate = 0 (only for predicted VR)
+                if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
+                    zero_mask = (
+                        (self.data['Average Amps (A) (Raw)'].fillna(0) == 0)
+                        & (self.data['Drive Frequency (Hz) (Raw)'].fillna(0) == 0)
+                    )
+                    self.data.loc[zero_mask, vr_col] = 0.0
+            else:
+                logger.info("Virtual Rate column exists; skipping prediction and keeping provided values")
+                try:
+                    # Still compute prediction for comparison/plot if needed
+                    virtual_rate_pred = self.predict('virtual_rate')
+                    results['virtual_rate'] = virtual_rate_pred
+                    self.data['predicted_virtual_rate'] = virtual_rate_pred
+                except Exception as e:
+                    logger.warning(f"Could not compute virtual rate prediction for reference: {e}")
 
             # 3. Resample to 30-minute grid (df_all equivalent)
             logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
@@ -716,9 +728,58 @@ class WellAnalysisPipeline:
         def recommendation_map(x: int) -> str:
             x = int(x)
             if x == 0:
-                return ""
-            # keep others as empty strings to mirror template table output
-            return ""
+                return " "
+            recs = {
+                1: (
+                    "The Possibility Causes:\n 1. Well productivity less than pump design range\n 2. Restricted pump\n"
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
+                    "2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
+                ),
+                2: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Verify if vibration have increased by 20% from the pump install date\n"
+                    "2. Do shut-in test while the surface check valve is closed, and the pump is running"
+                ),
+                3: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Confirm by a pressure test at the tubing wellhead\n"
+                    "2. Meanwhile, fill up the tubing and pressure up against RCV"
+                ),
+                4: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
+                    "2. Conduct the fluid analysis as a basis for re-design pump"
+                ),
+                5: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Lower the value of frequency using VSD.\n"
+                    "2. Check the pump discharge pressure and compare to previous well data history"
+                ),
+                6: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "Analyze the fluid level and Bottom Hole Pressure (BHP) data!"
+                ),
+                7: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data!\n"
+                    "2. Adjust the tubing well head pressure and bring the pump production rate within design rate"
+                ),
+                8: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Check flow line and separator for evidence of sand, mud, or debris.\n"
+                    "2. Design solid control system for next installation"
+                ),
+                9: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Verify if the valve was deliberately partially closed by Field Service Tech\n"
+                    "2. Contact the Field Service Tech to check out well on location"
+                ),
+                11: (
+                    "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
+                ),
+            }
+            return recs.get(x, "Unidentified")
 
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
@@ -778,6 +839,11 @@ class WellAnalysisPipeline:
             out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
             out['Prediction'] = pred_vec
 
+            # Reason for status (human-friendly)
+            reason = np.full(len(merged), '', dtype=object)
+            reason = np.where(mask_shutin, 'Rule: Shut-in (Amps & Frequency ~ 0)', reason)
+            # For model-based Low PI, keep empty here; we will set based on mapped Status below
+
             # Remap Status/Recommendation after overrides
             out['Status'] = out['Prediction'].apply(status_map)
             out['Recommendation'] = out['Prediction'].apply(recommendation_map)
@@ -791,6 +857,18 @@ class WellAnalysisPipeline:
             def code_from_status(s: str) -> int:
                 return 1 if s == 'Low PI' else (11 if s == 'Shut-in' else 0)
             out['Prediction'] = out['Status'].apply(code_from_status)
+
+            # Finalize Reason column after restriction
+            out['Reason'] = ''
+            # If Shut-in, keep rule-based reason
+            shutin_idx = out['Status'] == 'Shut-in'
+            if shutin_idx.any():
+                # align by index after merge
+                out.loc[shutin_idx, 'Reason'] = 'Rule: Shut-in (Amps & Frequency ~ 0)'
+            # If Low PI, mark as model-based
+            lowpi_idx = out['Status'] == 'Low PI'
+            if lowpi_idx.any():
+                out.loc[lowpi_idx, 'Reason'] = 'Model: Low PI'
 
         except Exception as e:
             logger.warning(f"Failed applying additional status rules: {e}")
@@ -935,8 +1013,9 @@ class WellAnalysisPipeline:
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, f"{self.well_name}_failure_prediction_30min.csv")
         try:
-            # Ensure ordering of columns
-            cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation']
+            # Ensure ordering of columns (include Reason if available)
+            base_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation']
+            cols = base_cols + (['Reason'] if 'Reason' in final_df.columns else [])
             df_to_save = final_df[cols].copy() if all(c in final_df.columns for c in cols) else final_df.copy()
             df_to_save.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
             logger.info(f"Saved final failure results to: {output_file}")
