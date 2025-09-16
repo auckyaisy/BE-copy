@@ -529,7 +529,7 @@ class WellAnalysisPipeline:
     def _compute_window_slopes_30min(self, df: pd.DataFrame) -> pd.DataFrame:
         """Compute linear slopes per 30-minute window for specific numeric columns
         and return a DataFrame with columns: Window_Start_Time, A, IP, DP, IT, MT, V, R.
-        Slopes are computed via numpy.polyfit against seconds from window start.
+        Vectorized via grouped aggregate slope formula for speed.
         """
         if 'Reading Time' not in df.columns:
             raise ValueError("'Reading Time' column is required for slope computation")
@@ -547,52 +547,54 @@ class WellAnalysisPipeline:
         dfw = df.copy()
         dfw['Reading Time'] = pd.to_datetime(dfw['Reading Time'], errors='coerce')
         dfw = dfw.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
+        if dfw.empty:
+            return pd.DataFrame(columns=['Window_Start_Time'] + list(use_cols_map.keys()))
 
-        # Windows aligned to :00 and :30
-        start_time = dfw['Reading Time'].iloc[0].floor('30min')
-        end_time = dfw['Reading Time'].iloc[-1].ceil('30min')
-        window_starts = pd.date_range(start=start_time, end=end_time, freq='30min')
+        # Compute window start per row aligned to :00 and :30
+        dfw['Window_Start_Time'] = dfw['Reading Time'].dt.floor('30min')
+        # Time in seconds from window start
+        dfw['_t'] = (dfw['Reading Time'] - dfw['Window_Start_Time']).dt.total_seconds().astype(float)
+        dfw['_t2'] = dfw['_t'] * dfw['_t']
 
-        rows: List[Dict[str, Union[float, pd.Timestamp]]] = []
-        for ws in window_starts:
-            we = ws + pd.Timedelta(minutes=30)
-            wd = dfw[(dfw['Reading Time'] >= ws) & (dfw['Reading Time'] < we)]
-            if len(wd) < 2:
-                # need at least 2 points for slope
-                continue
+        # Prepare output frame with all distinct windows
+        windows = dfw[['Window_Start_Time']].drop_duplicates().sort_values('Window_Start_Time')
+        out = windows.copy()
 
-            slopes_row: Dict[str, Union[float, pd.Timestamp]] = {'Window_Start_Time': ws}
-            # seconds from window start
-            tsec = (wd['Reading Time'] - ws).dt.total_seconds().values
-            for short, col in use_cols_map.items():
-                if col not in wd.columns:
-                    slopes_row[short] = np.nan
-                    continue
-                series = wd[[col]].dropna().copy()
-                if series.empty:
-                    slopes_row[short] = np.nan
-                    continue
-                # align time with non-null rows
-                mask_nonnull = wd[col].notna().values
-                x = tsec[mask_nonnull]
-                y = wd[col].dropna().values
-                if y.size < 2 or x.size < 2:
-                    slopes_row[short] = np.nan
-                    continue
-                # slope via polyfit (slope per second). Convert to per-minute to mirror templates where needed
-                try:
-                    m, _ = np.polyfit(x, y, 1)
-                    slopes_row[short] = float(m)  # keep as per-second slope; rules use ~0 tolerance
-                except Exception:
-                    slopes_row[short] = np.nan
+        # Helper to compute slope for a single column using grouped sums
+        def slope_by_group(colname: str) -> pd.DataFrame:
+            if colname not in dfw.columns:
+                return pd.DataFrame({'Window_Start_Time': out['Window_Start_Time'], 'slope': np.nan})
+            tmp = dfw[['Window_Start_Time', '_t', '_t2', colname]].copy()
+            tmp = tmp.dropna(subset=[colname])
+            if tmp.empty:
+                return pd.DataFrame({'Window_Start_Time': out['Window_Start_Time'], 'slope': np.nan})
+            tmp['_ty'] = tmp['_t'] * tmp[colname].astype(float)
+            g = tmp.groupby('Window_Start_Time', as_index=False).agg(
+                n=('_t', 'count'),
+                sum_t=('_t', 'sum'),
+                sum_y=(colname, 'sum'),
+                sum_t2=('_t2', 'sum'),
+                sum_ty=('_ty', 'sum'),
+            )
+            # slope = (n*sum_ty - sum_t*sum_y) / (n*sum_t2 - (sum_t)^2)
+            n = g['n'].to_numpy(dtype=float)
+            sum_t = g['sum_t'].to_numpy(dtype=float)
+            sum_y = g['sum_y'].to_numpy(dtype=float)
+            sum_t2 = g['sum_t2'].to_numpy(dtype=float)
+            sum_ty = g['sum_ty'].to_numpy(dtype=float)
+            denom = n * sum_t2 - sum_t * sum_t
+            with np.errstate(divide='ignore', invalid='ignore'):
+                slope = (n * sum_ty - sum_t * sum_y) / denom
+            slope = np.where((denom == 0) | ~np.isfinite(slope), np.nan, slope)
+            return pd.DataFrame({'Window_Start_Time': g['Window_Start_Time'], 'slope': slope})
 
-            rows.append(slopes_row)
+        # Compute slopes for each column and merge into output
+        for short, col in use_cols_map.items():
+            s = slope_by_group(col)
+            out = out.merge(s, on='Window_Start_Time', how='left')
+            out.rename(columns={'slope': short}, inplace=True)
 
-        slopes_df = pd.DataFrame(rows)
-        # Ensure types
-        if not slopes_df.empty:
-            slopes_df['Window_Start_Time'] = pd.to_datetime(slopes_df['Window_Start_Time'])
-        return slopes_df
+        return out
 
     def _assemble_failure_results(
         self,
@@ -638,7 +640,7 @@ class WellAnalysisPipeline:
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
 
-        # Apply additional rules using df_all and slopes_df akin to the template
+        # Apply additional rules using vectorized operations
         try:
             TOL = 1e-8
             df_all2 = df_all.copy()
@@ -646,93 +648,74 @@ class WellAnalysisPipeline:
             slopes_df2 = slopes_df.copy()
             slopes_df2['Window_Start_Time'] = pd.to_datetime(slopes_df2['Window_Start_Time'], errors='coerce')
 
-            for idx, row in out.iterrows():
-                ws = row['Window_Start_Time']
+            # Merge out with df_all (resampled point at window start)
+            merged = (out
+                      .merge(df_all2, left_on='Window_Start_Time', right_on='Reading Time', how='left', suffixes=('', '_res'))
+                      .merge(slopes_df2, on='Window_Start_Time', how='left', suffixes=('', '_slope')))
 
-                # 100% Watercut rule from daily production file, if present
-                try:
-                    if self.df_wc is not None and not self.df_wc.empty:
-                        wc_row = self.df_wc[self.df_wc['Date'] == ws.normalize()]
-                        if not wc_row.empty:
-                            wc_val = wc_row['WC'].iloc[0]
-                            if pd.notna(wc_val) and np.isclose(float(wc_val), 100.0, atol=1e-6):
-                                out.at[idx, 'Prediction'] = 12
-                                out.at[idx, 'Status'] = '100% Watercut'
-                                out.at[idx, 'Recommendation'] = ''
-                                continue
-                except Exception as _:
-                    pass
-                match_row = df_all2[df_all2['Reading Time'] == ws]
-                slope_row = slopes_df2[slopes_df2['Window_Start_Time'] == ws]
-                if match_row.empty or slope_row.empty:
-                    continue
+            # Watercut rule mask by date
+            if getattr(self, 'df_wc', None) is not None and self.df_wc is not None and not self.df_wc.empty:
+                wc = self.df_wc.copy()
+                wc['Date'] = pd.to_datetime(wc['Date'], errors='coerce').dt.normalize()
+                merged['ws_date'] = merged['Window_Start_Time'].dt.normalize()
+                merged = merged.merge(wc[['Date', 'WC']], left_on='ws_date', right_on='Date', how='left')
+                mask_wc = merged['WC'].apply(lambda x: pd.notna(x) and np.isclose(float(x), 100.0, atol=1e-6))
+            else:
+                mask_wc = pd.Series(False, index=merged.index)
 
-                amps = match_row.get('Average Amps (A) (Raw)', pd.Series([np.nan])).iloc[0]
-                freq = match_row.get('Drive Frequency (Hz) (Raw)', pd.Series([np.nan])).iloc[0]
-                rate = match_row.get('Virtual Rate (BFPD) (Raw)', pd.Series([np.nan])).iloc[0]
+            # Shortcuts for columns (fillna with 0 for comparisons)
+            amps = merged.get('Average Amps (A) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
+            freq = merged.get('Drive Frequency (Hz) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
+            rate = merged.get('Virtual Rate (BFPD) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
 
-                dp = slope_row.get('DP', pd.Series([np.nan])).iloc[0]
-                it = slope_row.get('IT', pd.Series([np.nan])).iloc[0]
-                mt = slope_row.get('MT', pd.Series([np.nan])).iloc[0]
-                v_ = slope_row.get('V', pd.Series([np.nan])).iloc[0]
-                r_ = slope_row.get('R', pd.Series([np.nan])).iloc[0]
+            dp_s = merged.get('DP', pd.Series(np.nan, index=merged.index)).fillna(0.0)
+            it_s = merged.get('IT', pd.Series(np.nan, index=merged.index)).fillna(0.0)
+            mt_s = merged.get('MT', pd.Series(np.nan, index=merged.index)).fillna(0.0)
+            v_s = merged.get('V', pd.Series(np.nan, index=merged.index)).fillna(0.0)
+            r_s = merged.get('R', pd.Series(np.nan, index=merged.index)).fillna(0.0)
 
-                # Check 30-minute window variation in original data
-                end_time = ws + pd.Timedelta(minutes=30)
-                subset_ori = self.data[(pd.to_datetime(self.data['Reading Time'], errors='coerce') >= ws) &
-                                       (pd.to_datetime(self.data['Reading Time'], errors='coerce') < end_time)]
-                cols_check = [
-                    'Intake Pressure (psi) (Raw)',
-                    'Discharge Pressure (psi) (Raw)',
-                    'Intake Temperature (F) (Raw)',
-                    'Motor Temperature (F) (Raw)',
-                    'Vibration (gravit) (Raw)',
-                    'Virtual Rate (BFPD) (Raw)'
-                ]
-                has_variation = False
-                if not subset_ori.empty:
-                    for c in cols_check:
-                        if c in subset_ori.columns and subset_ori[c].nunique(dropna=True) > 1:
-                            has_variation = True
-                            break
+            # Variation proxy: any slope magnitude above tolerance in the window
+            any_variation = (dp_s.abs() > TOL) | (it_s.abs() > TOL) | (mt_s.abs() > TOL) | (v_s.abs() > TOL) | (r_s.abs() > TOL)
 
-                # Shut-in rule
-                if np.isclose(amps if pd.notna(amps) else 0, 0, atol=TOL) and np.isclose(freq if pd.notna(freq) else 0, 0, atol=TOL):
-                    other_cols = [
-                        'Virtual Rate (BFPD) (Raw)',
-                        'Discharge Pressure (psi) (Raw)',
-                        'Intake Temperature (F) (Raw)',
-                        'Motor Temperature (F) (Raw)',
-                        'Vibration (gravit) (Raw)'
-                    ]
-                    all_zero = True
-                    for c in other_cols:
-                        val = match_row.get(c, pd.Series([np.nan])).iloc[0]
-                        if not np.isclose(val if pd.notna(val) else 0, 0, atol=TOL):
-                            all_zero = False
-                            break
+            # Shut-in mask
+            amps_zero = np.isclose(amps, 0.0, atol=TOL)
+            freq_zero = np.isclose(freq, 0.0, atol=TOL)
+            other_zero = (
+                np.isclose(rate, 0.0, atol=TOL)
+                & np.isclose(merged.get('Discharge Pressure (psi) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
+                & np.isclose(merged.get('Intake Temperature (F) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
+                & np.isclose(merged.get('Motor Temperature (F) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
+                & np.isclose(merged.get('Vibration (gravit) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
+            )
+            mask_shutin = amps_zero & freq_zero & (other_zero | any_variation)
 
-                    if all_zero or has_variation:
-                        out.at[idx, 'Prediction'] = 11
-                        out.at[idx, 'Status'] = 'Shut-in'
-                        out.at[idx, 'Recommendation'] = ''
-                        continue
+            # EDP mask (all near-zero and no variation)
+            edp_conds = (
+                amps_zero & freq_zero &
+                np.isclose(rate, 0.0, atol=TOL) &
+                np.isclose(dp_s, 0.0, atol=TOL) &
+                np.isclose(it_s, 0.0, atol=TOL) &
+                np.isclose(mt_s, 0.0, atol=TOL) &
+                np.isclose(v_s, 0.0, atol=TOL) &
+                np.isclose(r_s, 0.0, atol=TOL)
+            )
+            mask_edp = edp_conds & (~any_variation)
 
-                # EDP rule (all near-zero and no variation)
-                conditions = [
-                    np.isclose(amps if pd.notna(amps) else 0, 0, atol=TOL),
-                    np.isclose(freq if pd.notna(freq) else 0, 0, atol=TOL),
-                    np.isclose(rate if pd.notna(rate) else 0, 0, atol=TOL),
-                    np.isclose(dp if pd.notna(dp) else 0, 0, atol=TOL),
-                    np.isclose(it if pd.notna(it) else 0, 0, atol=TOL),
-                    np.isclose(mt if pd.notna(mt) else 0, 0, atol=TOL),
-                    np.isclose(v_ if pd.notna(v_) else 0, 0, atol=TOL),
-                    np.isclose(r_ if pd.notna(r_) else 0, 0, atol=TOL),
-                ]
-                if all(conditions) and not has_variation:
-                    out.at[idx, 'Prediction'] = 10
-                    out.at[idx, 'Status'] = 'Electrical Downhole Problem'
-                    out.at[idx, 'Recommendation'] = ''
+            # Start from current predictions
+            pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
+
+            # Apply rule priorities: WC (12) > Shut-in (11) > EDP (10)
+            pred_vec = np.where(mask_edp, 10, pred_vec)
+            pred_vec = np.where(mask_shutin, 11, pred_vec)
+            pred_vec = np.where(mask_wc, 12, pred_vec)
+
+            # Write back into out by aligning indices
+            out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
+            out['Prediction'] = pred_vec
+
+            # Remap Status/Recommendation after overrides
+            out['Status'] = out['Prediction'].apply(status_map)
+            out['Recommendation'] = out['Prediction'].apply(recommendation_map)
 
         except Exception as e:
             logger.warning(f"Failed applying additional status rules: {e}")
