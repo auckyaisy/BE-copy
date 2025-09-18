@@ -43,6 +43,12 @@ def parse_arguments():
     )
     
     parser.add_argument(
+        '--output-dir',
+        type=str,
+        help='Custom output directory. Defaults to data/output under the project root.'
+    )
+    
+    parser.add_argument(
         '--log-level',
         type=str,
         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
@@ -67,8 +73,9 @@ def main():
     logger.info(f"Starting analysis for well: {args.well_name}")
     
     try:
-        # Initialize the pipeline
-        pipeline = WellAnalysisPipeline(args.well_name)
+        # Initialize the pipeline with optional custom output directory
+        output_dir = Path(args.output_dir) if args.output_dir else None
+        pipeline = WellAnalysisPipeline(args.well_name, output_dir=output_dir)
         
         # Determine input file path
         input_file = args.input_file

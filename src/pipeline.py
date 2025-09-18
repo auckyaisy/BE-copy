@@ -25,21 +25,22 @@ class WellAnalysisPipeline:
     A pipeline for processing well data and making predictions using trained models.
     """
     
-    def __init__(self, well_name: str):
+    def __init__(self, well_name: str, output_dir: Optional[Path] = None):
         """
         Initialize the pipeline with a specific well name.
         
         Args:
             well_name: Name of the well (used for input/output file naming)
+            output_dir: Optional custom directory to save all outputs
         """
         self.well_name = well_name
         self.models = {}
         self.data = None
         self.predictions = {}
         self.df_wc: Optional[pd.DataFrame] = None
-        
-        # Create output directory if it doesn't exist
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        # Resolve and create output directory
+        self.output_dir: Path = Path(output_dir) if output_dir is not None else OUTPUT_DIR
+        self.output_dir.mkdir(parents=True, exist_ok=True)
     
     def load_data(self, file_path: Optional[Path] = None) -> pd.DataFrame:
         """
@@ -464,10 +465,10 @@ class WellAnalysisPipeline:
                 dp_col = 'Discharge Pressure (psi) (Raw)'
                 vr_col = 'Virtual Rate (BFPD) (Raw)'
                 if dp_col in df_all.columns:
-                    dp30_path = OUTPUT_DIR / f"{self.well_name}_discharge_pressure_30min.csv"
+                    dp30_path = self.output_dir / f"{self.well_name}_discharge_pressure_30min.csv"
                     df_all[['Reading Time', dp_col]].rename(columns={dp_col: 'discharge_pressure'}).to_csv(dp30_path, index=False)
                 if vr_col in df_all.columns:
-                    vr30_path = OUTPUT_DIR / f"{self.well_name}_virtual_rate_30min.csv"
+                    vr30_path = self.output_dir / f"{self.well_name}_virtual_rate_30min.csv"
                     df_all[['Reading Time', vr_col]].rename(columns={vr_col: 'virtual_rate'}).to_csv(vr30_path, index=False)
             except Exception as e:
                 logger.warning(f"Could not save 30-minute DP/VR CSVs: {e}")
@@ -918,8 +919,8 @@ class WellAnalysisPipeline:
         Args:
             results: Dictionary containing the prediction results
         """
-        # Use configured OUTPUT_DIR (data/output)
-        output_dir = str(OUTPUT_DIR)
+        # Use configured output directory
+        output_dir = str(self.output_dir)
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving results to directory: {output_dir}")
         
@@ -1009,7 +1010,7 @@ class WellAnalysisPipeline:
         """Save the final failure prediction results in the template format
         with columns: Window_Start_Time, Prediction, Status, Recommendation.
         """
-        output_dir = str(OUTPUT_DIR)
+        output_dir = str(self.output_dir)
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, f"{self.well_name}_failure_prediction_30min.csv")
         try:
@@ -1080,7 +1081,7 @@ class WellAnalysisPipeline:
             if 'virtual_rate' in results and len(results['virtual_rate']) == len(df):
                 df['predicted_virtual_rate'] = results['virtual_rate']
 
-            OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+            self.output_dir.mkdir(parents=True, exist_ok=True)
             sns.set(style='whitegrid')
 
             # X-axis
@@ -1097,7 +1098,7 @@ class WellAnalysisPipeline:
             ax1.set_ylabel('psi')
             ax1.legend()
             fig1.tight_layout()
-            dp_plot = OUTPUT_DIR / f"{self.well_name}_discharge_pressure_plot.png"
+            dp_plot = self.output_dir / f"{self.well_name}_discharge_pressure_plot.png"
             fig1.savefig(dp_plot, dpi=150)
 
             # Figure 2: Virtual Rate
@@ -1111,7 +1112,7 @@ class WellAnalysisPipeline:
             ax2.set_ylabel('BFPD')
             ax2.legend()
             fig2.tight_layout()
-            vr_plot = OUTPUT_DIR / f"{self.well_name}_virtual_rate_plot.png"
+            vr_plot = self.output_dir / f"{self.well_name}_virtual_rate_plot.png"
             fig2.savefig(vr_plot, dpi=150)
 
             # Figure 3: Sensor overview + predictions
@@ -1147,7 +1148,7 @@ class WellAnalysisPipeline:
             ax4.set_xlabel('Time' if time_col else 'Index')
             ax4.legend()
             fig3.tight_layout()
-            overview_plot = OUTPUT_DIR / f"{self.well_name}_overview_plot.png"
+            overview_plot = self.output_dir / f"{self.well_name}_overview_plot.png"
             fig3.savefig(overview_plot, dpi=150)
 
             # Try to open saved plots

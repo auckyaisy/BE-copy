@@ -66,6 +66,7 @@ python main.py --well-name SKW-02 --model all
 
 - `--well-name`: Name of the well (required)
 - `--input-file`: Path to the input CSV file (optional, defaults to `data/input/{well_name}.csv`)
+- `--output-dir`: Custom output directory (optional). If not provided, outputs are saved under `data/output/`.
 - `--model`: Which model(s) to run (default: 'all')
   - Options: 'all', 'discharge_pressure', 'virtual_rate', 'slope', 'failure_prediction'
 - `--log-level`: Logging level (default: 'INFO')
@@ -79,11 +80,10 @@ python main.py --well-name SKW-02 --model all --log-level DEBUG
 
 # Run only discharge pressure prediction
 python main.py --well-name SKW-02 --model discharge_pressure
+
+# Run full analysis and write outputs to a custom folder
+python main.py --well-name SKW-02 --model all --output-dir ./results/SKW-02
 ```
-
-## Configuration
-
-### Input Data Format
 
 The pipeline expects CSV files with the following columns (adjust in `config/config.py` if needed):
 
@@ -136,7 +136,9 @@ After training, save the models to the `models/` directory using `joblib.dump()`
 
 ## Output
 
-The pipeline generates the following output files in the `data/output/` directory:
+By default, the pipeline writes outputs to `data/output/`. You can override this with `--output-dir <path>`.
+
+The following output files are produced in the chosen output directory:
 
 - `{well_name}_{model_name}_predictions.csv`: CSV file containing the model predictions
 - `{well_name}_{model_name}_plot.png`: Plot of the predictions vs. actual values (if available)
@@ -147,7 +149,7 @@ The pipeline generates the following output files in the `data/output/` director
 You can package this project into a single-file executable for macOS and Windows using PyInstaller. The executable will:
 
 - Accept the same CLI arguments as `python main.py`.
-- Run the pipeline and save CSVs into `data/output/`.
+- Run the pipeline and save CSVs into the specified output directory (default `data/output/`).
 - Generate plots and attempt to auto-open them in your OS default viewer.
 
 ### 1) Install PyInstaller
@@ -221,16 +223,16 @@ If your input is not located at `data/input/{well_name}.csv`, provide `--input-f
 
 ### 6) What you’ll see at the end
 
-- CSVs created in `data/output/`:
+- CSVs created in your chosen output directory (default `data/output/`):
   - `{well}_discharge_pressure_predictions.csv`
   - `{well}_virtual_rate_predictions.csv`
   - `{well}_failure_prediction_30min.csv`
-- Plots auto-opened by the OS and saved under `data/output/`:
+- Plots auto-opened by the OS and saved under the chosen output directory:
   - `{well}_discharge_pressure_plot.png`
   - `{well}_virtual_rate_plot.png`
   - `{well}_overview_plot.png` (sensor overview + predictions)
 
-If plots do not auto-open (e.g. on headless servers), you can open the PNGs manually from the `data/output/` directory.
+If plots do not auto-open (e.g. on headless servers), you can open the PNGs manually from the output directory you specified.
 
 ## Troubleshooting
 
