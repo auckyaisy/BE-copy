@@ -86,6 +86,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     zoom_links = []
     events_plot = None
     slope_data = None
+    daily_bar_data = {'dates': [], 'counts': [], 'statuses': []}
     if pred_df is not None and not pred_df.empty and 'Window_Start_Time' in pred_df.columns and 'Status' in pred_df.columns:
         pdf = pred_df.copy()
         pdf['Window_Start_Time'] = pd.to_datetime(pdf['Window_Start_Time'], errors='coerce')
@@ -182,9 +183,6 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
             if not nonrun.empty:
                 counts = nonrun['Dominant Status'].value_counts()
                 lines = []
-                lines.append('Summary (dominant non-Running statuses over 3-hour windows):')
-                for k, v in counts.items():
-                    lines.append(f"- {k}: {v} windows")
                 rec_map = {
                     'Low PI': (
                         "Low PI: Check fluid level and BHP. If acceptable, adjust tubing WHP to bring pump within design rate; check for possible restricted pump."
@@ -258,6 +256,26 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         except Exception:
             events_plot = None
 
+    # Build daily bar data from detected_events (3-hour non-running windows)
+    try:
+        if detected_events:
+            events_df = pd.DataFrame(detected_events)
+            events_df['date'] = pd.to_datetime(events_df['date']).dt.date
+
+            # Count events per day and find dominant status for that day
+            daily_summary = events_df.groupby('date').agg(
+                count=('date', 'size'),
+                status=('dominant_status', lambda s: s.value_counts().idxmax())
+            ).reset_index()
+
+            daily_bar_data = {
+                'dates': [d.strftime('%Y-%m-%d') for d in daily_summary['date']],
+                'counts': daily_summary['count'].tolist(),
+                'statuses': daily_summary['status'].tolist(),
+            }
+    except Exception:
+        daily_bar_data = {'dates': [], 'counts': [], 'statuses': []}
+
     # If slope_data not prepared above (e.g., no pred_df), still provide base series without bands
     if slope_data is None:
         try:
@@ -299,6 +317,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         pie_nonrun_b64=pie_nonrun_b64,
         zoom_links=zoom_links,
         slope_json=json.dumps(slope_data or {}),
+        daily_bar_data=daily_bar_data,
     )
 
 
@@ -427,7 +446,6 @@ def slopes_api():
 
         # Prepare series
         sd = slopes_df.copy()
-        sd['Window_Start_Time'] = pd.to_datetime(sd['Window_Start_Time'], errors='coerce')
         sd = sd.dropna(subset=['Window_Start_Time']).sort_values('Window_Start_Time')
         times = sd['Window_Start_Time'].dt.strftime('%Y-%m-%d %H:%M:%S').tolist()
         series_cols = ['A','IP','DP','IT','MT','V','R']
