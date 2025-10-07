@@ -54,6 +54,9 @@ class WellAnalysisPipeline:
         """
         if file_path is None:
             file_path = INPUT_DIR / f"{self.well_name}.csv"
+        else:
+            # Convert to Path if string
+            file_path = Path(file_path)
         
         logger.info(f"Loading data from {file_path}")
         self.data = pd.read_csv(file_path)
@@ -404,8 +407,9 @@ class WellAnalysisPipeline:
             Dict containing all predictions and calculations
         """
         try:
-            # Load the data
-            self.load_data(input_file)
+            # Load the data if not already loaded
+            if self.data is None or self.data.empty:
+                self.load_data(input_file)
 
             # Ensure timestamp is datetime and sorted
             if 'Reading Time' in self.data.columns:
@@ -447,18 +451,36 @@ class WellAnalysisPipeline:
                     )
                     self.data.loc[zero_mask, vr_col] = 0.0
             else:
-                logger.info("Virtual Rate column exists; skipping prediction and keeping provided values")
+                logger.info("Virtual Rate column exists; predicting and overwriting to match template behavior")
                 try:
-                    # Still compute prediction for comparison/plot if needed
+                    # Predict VR and overwrite raw column like the template
                     virtual_rate_pred = self.predict('virtual_rate')
                     results['virtual_rate'] = virtual_rate_pred
                     self.data['predicted_virtual_rate'] = virtual_rate_pred
+                    # Overwrite raw VR with prediction
+                    self.data[vr_col] = virtual_rate_pred
+                    # Apply zeroing rule when Amps==0 and Freq==0
+                    if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
+                        zero_mask = (
+                            (self.data['Average Amps (A) (Raw)'].fillna(0) == 0)
+                            & (self.data['Drive Frequency (Hz) (Raw)'].fillna(0) == 0)
+                        )
+                        self.data.loc[zero_mask, vr_col] = 0.0
                 except Exception as e:
-                    logger.warning(f"Could not compute virtual rate prediction for reference: {e}")
+                    logger.warning(f"Could not compute virtual rate prediction for overwrite: {e}")
 
             # 3. Resample to 30-minute grid (df_all equivalent)
             logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
             df_all = self._build_df_all_30min(self.data)
+
+            # Save df_all.csv at project root to mirror template output
+            try:
+                project_root = Path(__file__).resolve().parents[1]
+                df_all_path = project_root / 'df_all.csv'
+                df_all.to_csv(df_all_path, index=False)
+                logger.info(f"Saved df_all to: {df_all_path}")
+            except Exception as e:
+                logger.warning(f"Could not save df_all.csv: {e}")
 
             # Save 30-minute resampled DP and VR to compare with notebooks
             try:
@@ -502,6 +524,11 @@ class WellAnalysisPipeline:
                 slopes_ts_path = project_root / 'slopes_df_30menit.csv'
                 slopes_with_ts.to_csv(slopes_ts_path, index=False)
                 logger.info(f"Saved slopes_df_30menit to: {slopes_ts_path}")
+                # Save the exact features used with Window_Start_Time for audit and for inference parity
+                features_used = slopes_with_ts.copy()
+                features_used_path = project_root / 'failure_features_used_30menit.csv'
+                features_used.to_csv(features_used_path, index=False)
+                logger.info(f"Saved failure_features_used_30menit to: {features_used_path}")
             except Exception as e:
                 logger.warning(f"Could not save X_predict_30menit.csv: {e}")
 
@@ -510,7 +537,17 @@ class WellAnalysisPipeline:
                 logger.warning("No slope feature rows available; using zeros for failure prediction output")
                 failure_pred = np.zeros(len(slopes_df), dtype=int)
             else:
-                failure_pred = self.predict('failure_prediction', data=df11)
+                # Load the just-saved features with timestamps to ensure parity with disk outputs
+                try:
+                    project_root = Path(__file__).resolve().parents[1]
+                    features_used_path = project_root / 'failure_features_used_30menit.csv'
+                    fu = pd.read_csv(features_used_path)
+                    # Keep only expected feature columns in correct order
+                    infer_df = fu[[c for c in expected_cols if c in fu.columns]].copy()
+                    failure_pred = self.predict('failure_prediction', data=infer_df)
+                except Exception as e:
+                    logger.warning(f"Fell back to in-memory features for prediction: {e}. Using df11 in-memory.")
+                    failure_pred = self.predict('failure_prediction', data=df11)
             results['failure_prediction'] = failure_pred
 
             # Assemble final result DataFrame to match template
@@ -531,6 +568,19 @@ class WellAnalysisPipeline:
                     failure_pred = np.concatenate([np.asarray(failure_pred), pad])
 
             final_df = self._assemble_failure_results(slopes_df, df_all, failure_pred)
+
+            # Save joined debug CSV for auditing: features + predictions/status
+            try:
+                project_root = Path(__file__).resolve().parents[1]
+                features_used_path = project_root / 'failure_features_used_30menit.csv'
+                if features_used_path.exists():
+                    fu = pd.read_csv(features_used_path)
+                    joined = fu.merge(final_df[['Window_Start_Time','Prediction','Status']], on='Window_Start_Time', how='left')
+                    audit_path = project_root / 'prediction_with_features_30menit.csv'
+                    joined.to_csv(audit_path, index=False)
+                    logger.info(f"Saved prediction_with_features_30menit to: {audit_path}")
+            except Exception as e:
+                logger.warning(f"Could not save prediction_with_features_30menit.csv: {e}")
 
             # Save outputs
             self._save_results(results)  # original simple CSVs
@@ -610,7 +660,7 @@ class WellAnalysisPipeline:
         df_idx = df_idx.dropna(subset=['Reading Time']).set_index('Reading Time')
         # Align to :00 and :30 using origin='epoch' to snap to half-hour grid
         df_resampled = (
-            df_idx.resample('30min', label='left', closed='left', origin='start_day')
+            df_idx.resample('30min', label='left', closed='left', origin='epoch')
                  .mean(numeric_only=True)
                  .reset_index()
         )
@@ -620,12 +670,16 @@ class WellAnalysisPipeline:
         return df_resampled
 
     def _compute_window_slopes_30min(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Compute linear slopes per 30-minute window for specific numeric columns
-        and return a DataFrame with columns: Window_Start_Time, A, IP, DP, IT, MT, V, R.
-        Vectorized via grouped aggregate slope formula for speed.
+        """Compute per-30-minute linear slopes identical to the notebooks.
+        - Build explicit windows with pd.date_range aligned to :00/:30
+        - Use seconds since window start and scipy linregress
+        - Skip windows with <2 points
+        Returns: DataFrame with ['Window_Start_Time','A','IP','DP','IT','MT','V','R']
         """
         if 'Reading Time' not in df.columns:
             raise ValueError("'Reading Time' column is required for slope computation")
+
+        from scipy.stats import linregress
 
         use_cols_map = {
             'A': 'Average Amps (A) (Raw)',
@@ -637,59 +691,43 @@ class WellAnalysisPipeline:
             'R': 'Virtual Rate (BFPD) (Raw)',
         }
 
-        dfw = df.copy()
-        dfw['Reading Time'] = pd.to_datetime(dfw['Reading Time'], errors='coerce')
-        dfw = dfw.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
-        if dfw.empty:
+        d = df.copy()
+        d['Reading Time'] = pd.to_datetime(d['Reading Time'], errors='coerce')
+        d = d.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
+        if d.empty:
             return pd.DataFrame(columns=['Window_Start_Time'] + list(use_cols_map.keys()))
 
-        # Compute window start per row aligned to :00 and :30
-        dfw['Window_Start_Time'] = dfw['Reading Time'].dt.floor('30min')
-        # Time in seconds from window start
-        dfw['_t'] = (dfw['Reading Time'] - dfw['Window_Start_Time']).dt.total_seconds().astype(float)
-        dfw['_t2'] = dfw['_t'] * dfw['_t']
+        start_time = d['Reading Time'].iloc[0].floor('30min')
+        end_time = d['Reading Time'].iloc[-1].ceil('30min')
+        windows = pd.date_range(start=start_time, end=end_time, freq='30min')
 
-        # Prepare output frame with all distinct windows
-        windows = dfw[['Window_Start_Time']].drop_duplicates().sort_values('Window_Start_Time')
-        out = windows.copy()
+        rows = []
+        for w_start in windows:
+            w_end = w_start + pd.Timedelta(minutes=30)
+            w_df = d[(d['Reading Time'] >= w_start) & (d['Reading Time'] < w_end)]
+            if len(w_df) < 2:
+                # Still record the window with NaNs (consistent with skipping in notebook exports)
+                row = {k: np.nan for k in use_cols_map.keys()}
+                row['Window_Start_Time'] = w_start
+                rows.append(row)
+                continue
 
-        # Helper to compute slope for a single column using grouped sums
-        def slope_by_group(colname: str) -> pd.DataFrame:
-            if colname not in dfw.columns:
-                return pd.DataFrame({'Window_Start_Time': out['Window_Start_Time'], 'slope': np.nan})
-            tmp = dfw[['Window_Start_Time', '_t', '_t2', colname]].copy()
-            tmp = tmp.dropna(subset=[colname])
-            if tmp.empty:
-                return pd.DataFrame({'Window_Start_Time': out['Window_Start_Time'], 'slope': np.nan})
-            tmp['_ty'] = tmp['_t'] * tmp[colname].astype(float)
-            g = tmp.groupby('Window_Start_Time', as_index=False).agg(
-                n=('_t', 'count'),
-                sum_t=('_t', 'sum'),
-                sum_y=(colname, 'sum'),
-                sum_t2=('_t2', 'sum'),
-                sum_ty=('_ty', 'sum'),
-            )
-            # slope = (n*sum_ty - sum_t*sum_y) / (n*sum_t2 - (sum_t)^2)
-            n = g['n'].to_numpy(dtype=float)
-            sum_t = g['sum_t'].to_numpy(dtype=float)
-            sum_y = g['sum_y'].to_numpy(dtype=float)
-            sum_t2 = g['sum_t2'].to_numpy(dtype=float)
-            sum_ty = g['sum_ty'].to_numpy(dtype=float)
-            denom = n * sum_t2 - sum_t * sum_t
-            with np.errstate(divide='ignore', invalid='ignore'):
-                slope = (n * sum_ty - sum_t * sum_y) / denom
-            slope = np.where((denom == 0) | ~np.isfinite(slope), np.nan, slope)
-            return pd.DataFrame({'Window_Start_Time': g['Window_Start_Time'], 'slope': slope})
+            # seconds since window start
+            tsec = (w_df['Reading Time'] - w_start).dt.total_seconds().to_numpy()
+            row = {'Window_Start_Time': w_start}
+            for short, col in use_cols_map.items():
+                if col not in w_df.columns:
+                    row[short] = np.nan
+                    continue
+                y = w_df[col].to_numpy(dtype=float)
+                try:
+                    slope, _, _, _, _ = linregress(tsec, y)
+                except Exception:
+                    slope = np.nan
+                row[short] = slope
+            rows.append(row)
 
-        # Compute slopes for each column and merge into output
-        for short, col in use_cols_map.items():
-            s = slope_by_group(col)
-            out = out.merge(s, on='Window_Start_Time', how='left')
-            out.rename(columns={'slope': short}, inplace=True)
-
-        # Slopes are per-second (as notebook uses linregress with seconds from window start)
-        logger.debug("Computed slopes per-second over 30-minute windows (no scaling)")
-
+        out = pd.DataFrame(rows)
         return out
 
     def _assemble_failure_results(
@@ -724,6 +762,7 @@ class WellAnalysisPipeline:
                 10: 'Electrical Downhole Problem',
                 11: 'Shut-in',
                 12: '100% Watercut',
+                13: 'Start-up Phase',
             }.get(x, 'Unidentified')
 
         def recommendation_map(x: int) -> str:
@@ -779,8 +818,10 @@ class WellAnalysisPipeline:
                 11: (
                     "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
                 ),
+                12: " ",
+                13: " ",
             }
-            return recs.get(x, "Unidentified")
+            return recs.get(x, " ")
 
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
@@ -798,8 +839,13 @@ class WellAnalysisPipeline:
                       .merge(df_all2, left_on='Window_Start_Time', right_on='Reading Time', how='left', suffixes=('', '_res'))
                       .merge(slopes_df2, on='Window_Start_Time', how='left', suffixes=('', '_slope')))
 
-            # Watercut override disabled per notebook requirement (only Low PI and Shut-in considered)
+            # Watercut override: if WC=100 for the date, set prediction to 12
             mask_wc = pd.Series(False, index=merged.index)
+            if hasattr(self, 'df_wc') and self.df_wc is not None and not self.df_wc.empty:
+                merged['Date'] = merged['Window_Start_Time'].dt.normalize()
+                wc_map = self.df_wc.set_index('Date')['WC'].to_dict()
+                merged['WC_val'] = merged['Date'].map(wc_map)
+                mask_wc = (merged['WC_val'].fillna(0) >= 100.0)
 
             # Shortcuts for columns (fillna with 0 for comparisons)
             amps = merged.get('Average Amps (A) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
@@ -827,13 +873,15 @@ class WellAnalysisPipeline:
             )
             mask_shutin = amps_zero & freq_zero & (other_zero | any_variation)
 
-            # EDP override disabled per notebook requirement
-            mask_edp = pd.Series(False, index=merged.index)
+            # EDP override: if Amps and Freq are zero AND DP/IP/IT/MT/V are also zero (no variation)
+            mask_edp = amps_zero & freq_zero & ~any_variation
 
             # Start from current predictions
             pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
 
-            # Apply only Shut-in override
+            # Apply overrides in order: Watercut, EDP, Shut-in
+            pred_vec = np.where(mask_wc, 12, pred_vec)
+            pred_vec = np.where(mask_edp, 10, pred_vec)
             pred_vec = np.where(mask_shutin, 11, pred_vec)
 
             # Write back into out by aligning indices
@@ -849,15 +897,8 @@ class WellAnalysisPipeline:
             out['Status'] = out['Prediction'].apply(status_map)
             out['Recommendation'] = out['Prediction'].apply(recommendation_map)
 
-            # Restrict to only 'Low PI' and 'Shut-in'; map others to 'Running'
-            allowed = {'Low PI', 'Shut-in', 'Running'}
-            def restrict_status(s: str) -> str:
-                return s if s in allowed else 'Running'
-            out['Status'] = out['Status'].apply(restrict_status)
-            # Synchronize Prediction code with restricted Status
-            def code_from_status(s: str) -> int:
-                return 1 if s == 'Low PI' else (11 if s == 'Shut-in' else 0)
-            out['Prediction'] = out['Status'].apply(code_from_status)
+            # Keep all statuses from template: Low PI, Shut-in, 100% Watercut, EDP, Running, etc.
+            # No restriction - allow all classes as per template
 
             # Finalize Reason column after restriction
             out['Reason'] = ''
@@ -870,6 +911,74 @@ class WellAnalysisPipeline:
             lowpi_idx = out['Status'] == 'Low PI'
             if lowpi_idx.any():
                 out.loc[lowpi_idx, 'Reason'] = 'Model: Low PI'
+
+            # --- Start-up Phase Detection ---
+            # NOTE: Template uses resampled data, but resampling with forward fill creates
+            # continuous data with no gaps. So we detect gaps from RAW sensor data instead.
+            out = out.sort_values('Window_Start_Time').reset_index(drop=True)
+            out['Status'] = out['Status'].str.strip()
+
+            # Detect gaps from raw sensor data (self.data) before resampling
+            if self.data is not None and 'Reading Time' in self.data.columns:
+                raw_data = self.data.copy()
+                raw_data['Reading Time'] = pd.to_datetime(raw_data['Reading Time'], errors='coerce')
+                raw_data = raw_data.sort_values('Reading Time').reset_index(drop=True)
+                
+                # Find all gaps >3 hours in raw data
+                gap_times = []
+                for i in range(1, len(raw_data)):
+                    prev_time = raw_data.loc[i-1, 'Reading Time']
+                    curr_time = raw_data.loc[i, 'Reading Time']
+                    if pd.notna(prev_time) and pd.notna(curr_time):
+                        gap_hours = (curr_time - prev_time).total_seconds() / 3600.0
+                        if gap_hours > 3:
+                            gap_times.append(curr_time)
+                
+                logger.info(f"Found {len(gap_times)} gaps >3h in raw sensor data")
+                
+                # For each gap, apply Start-up Phase logic
+                for gap_start_time in gap_times:
+                    # Find first window that contains or is after the gap
+                    after_gap_mask = out['Window_Start_Time'] >= gap_start_time
+                    if not after_gap_mask.any():
+                        continue
+                    
+                    first_after_gap_idx = out[after_gap_mask].index[0]
+                    first_after_gap_time = out.loc[first_after_gap_idx, 'Window_Start_Time']
+                    
+                    logger.info(f"Processing gap at {gap_start_time}, first window after: {first_after_gap_time}")
+                    
+                    # cari Shut-in dalam 3 hari setelah first_after_gap_time
+                    three_days_later = first_after_gap_time + pd.Timedelta(days=3)
+                    shutin_indices = out[
+                        (out['Window_Start_Time'] >= first_after_gap_time) &
+                        (out['Window_Start_Time'] <= three_days_later) &
+                        (out['Status'] == 'Shut-in')
+                    ].index
+
+                    if len(shutin_indices) > 0:
+                        # ambil Shut-in terjauh
+                        last_shutin_idx = shutin_indices[-1]
+                        logger.info(f"Found Shut-in, marking Start-up Phase from idx {first_after_gap_idx} to {last_shutin_idx}")
+                        # semua selain Shut-in antara first_after_gap_idx sampai last_shutin_idx → Start-up Phase
+                        for j in range(first_after_gap_idx, last_shutin_idx):
+                            if out.loc[j, 'Status'] != 'Shut-in':
+                                out.at[j, 'Prediction'] = 13
+                                out.at[j, 'Status'] = 'Start-up Phase'
+                                out.at[j, 'Reason'] = 'Rule: Start-up Phase after gap'
+                    else:
+                        # tidak ada Shut-in, ubah EDP 24 jam ke depan menjadi Start-up Phase
+                        end_24h = first_after_gap_time + pd.Timedelta(hours=24)
+                        edp_indices = out[
+                            (out['Window_Start_Time'] >= first_after_gap_time) &
+                            (out['Window_Start_Time'] <= end_24h) &
+                            (out['Status'].str.contains('Electrical Downhole Problem', na=False))
+                        ].index
+                        logger.info(f"No Shut-in found, marking {len(edp_indices)} EDP as Start-up Phase")
+                        for j in edp_indices:
+                            out.at[j, 'Prediction'] = 13
+                            out.at[j, 'Status'] = 'Start-up Phase'
+                            out.at[j, 'Reason'] = 'Rule: Start-up Phase (EDP after gap)'
 
         except Exception as e:
             logger.warning(f"Failed applying additional status rules: {e}")
@@ -1021,25 +1130,34 @@ class WellAnalysisPipeline:
             df_to_save.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
             logger.info(f"Saved final failure results to: {output_file}")
 
-            # # Also save notebook-style prediction_results_30menit.csv at project root
-            # try:
-            #     project_root = Path(__file__).resolve().parents[1]
-            #     pred30_path = project_root / 'prediction_results_30menit.csv'
-            #     df_nb = df_to_save.copy()
-            #     # Add Date column normalized to date
-            #     if 'Window_Start_Time' in df_nb.columns:
-            #         dt = pd.to_datetime(df_nb['Window_Start_Time'], errors='coerce')
-            #         df_nb['Date'] = dt.dt.normalize().dt.strftime('%Y-%m-%d')
-            #     # Ensure exact column order
-            #     nb_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
-            #     for c in nb_cols:
-            #         if c not in df_nb.columns:
-            #             df_nb[c] = ''
-            #     df_nb = df_nb[nb_cols]
-            #     df_nb.to_csv(pred30_path, index=False, header=False, date_format='%Y-%m-%d %H:%M:%S')
-            #     logger.info(f"Saved notebook-style 30-minute predictions to: {pred30_path}")
-            # except Exception as e2:
-            #     logger.warning(f"Could not save prediction_results_30menit.csv: {e2}")
+            # Also save notebook-style prediction_results_30menit.csv at project root and stress_test
+            try:
+                project_root = Path(__file__).resolve().parents[1]
+                df_nb = df_to_save.copy()
+                # Add Date column (date part of Window_Start_Time)
+                if 'Window_Start_Time' in df_nb.columns:
+                    dt = pd.to_datetime(df_nb['Window_Start_Time'], errors='coerce')
+                    df_nb['Date'] = dt.dt.strftime('%Y-%m-%d')
+                # Ensure exact column order per template
+                nb_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
+                for c in nb_cols:
+                    if c not in df_nb.columns:
+                        df_nb[c] = ''
+                df_nb = df_nb[nb_cols]
+
+                # Write to project root
+                pred30_path = project_root / 'prediction_results_30menit.csv'
+                df_nb.to_csv(pred30_path, index=False, date_format='%Y-%m-%d %H:%M:%S')
+                logger.info(f"Saved notebook-style 30-minute predictions to: {pred30_path}")
+
+                # If stress_test directory exists, also write there for easy diffing
+                stress_dir = project_root / 'stress_test'
+                if stress_dir.exists():
+                    pred30_path_stress = stress_dir / 'prediction_results_30menit.csv'
+                    df_nb.to_csv(pred30_path_stress, index=False, date_format='%Y-%m-%d %H:%M:%S')
+                    logger.info(f"Saved notebook-style predictions to stress_test: {pred30_path_stress}")
+            except Exception as e2:
+                logger.warning(f"Could not save prediction_results_30menit.csv: {e2}")
         except Exception as e:
             logger.error(f"Error saving final failure results: {e}")
 
@@ -1151,15 +1269,8 @@ class WellAnalysisPipeline:
             overview_plot = self.output_dir / f"{self.well_name}_overview_plot.png"
             fig3.savefig(overview_plot, dpi=150)
 
-            # Try to open saved plots
-            for p in [dp_plot, vr_plot, overview_plot]:
-                self._open_in_os(p)
-
-            # Also show interactively if environment allows
-            try:
-                plt.show()
-            except Exception:
-                pass
+            # Close all figures to prevent display
+            plt.close('all')
 
             logger.info(f"Saved plots to: {dp_plot}, {vr_plot}, {overview_plot}")
         except Exception as e:

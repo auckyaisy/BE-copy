@@ -1,246 +1,187 @@
-# Well Analysis Pipeline
 
-A Python-based pipeline for analyzing well data and making predictions using machine learning models. This pipeline integrates multiple models for discharge pressure prediction, virtual rate calculation, slope analysis, and failure prediction.
-
-## Features
-
-- **Modular Design**: Easily extendable architecture for adding new models and analysis steps
-- **Data Preprocessing**: Handles missing data, feature engineering, and time series resampling
-- **Model Integration**: Supports loading and using pre-trained models
-- **Visualization**: Generates plots for model predictions and analysis results
-- **Command-line Interface**: Simple CLI for running analyses on different wells
-
-## Project Structure
-
-```
-well_analysis_pipeline/
-├── config/                 # Configuration files
-│   └── config.py           # Main configuration
-├── data/                   # Data directories
-│   ├── input/              # Input CSV files (one per well)
-│   └── output/             # Output files (predictions, plots)
-├── models/                 # Pre-trained model files
-├── src/                    # Source code
-│   ├── pipeline.py         # Main pipeline implementation
-│   └── utils.py            # Utility functions
-├── main.py                 # Command-line interface
-├── requirements.txt         # Python dependencies
-└── README.md               # This file
-```
-
-## Installation
-
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd well_analysis_pipeline
-   ```
-
-2. Create and activate a virtual environment (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install the required packages:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-## Usage
-
-### Preparing Input Data
-
-1. Place your well data CSV files in the `data/input/` directory with the naming convention `{well_name}.csv`.
-2. Ensure your CSV files contain the required columns (see Configuration section).
-
-### Running the Pipeline
-
-To run the full analysis pipeline for a specific well:
+### Basic Usage
 
 ```bash
-python main.py --well-name SKW-02 --model all
+python3 main.py --well-name SKW-07
 ```
 
-### Command-line Arguments
-
-- `--well-name`: Name of the well (required)
-- `--input-file`: Path to the input CSV file (optional, defaults to `data/input/{well_name}.csv`)
-- `--output-dir`: Custom output directory (optional). If not provided, outputs are saved under `data/output/`.
-- `--model`: Which model(s) to run (default: 'all')
-  - Options: 'all', 'discharge_pressure', 'virtual_rate', 'slope', 'failure_prediction'
-- `--log-level`: Logging level (default: 'INFO')
-  - Options: 'DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'
-
-### Example
+### Full Options
 
 ```bash
-# Run full analysis with debug logging
-python main.py --well-name SKW-02 --model all --log-level DEBUG
-
-# Run only discharge pressure prediction
-python main.py --well-name SKW-02 --model discharge_pressure
-
-# Run full analysis and write outputs to a custom folder
-python main.py --well-name SKW-02 --model all --output-dir ./results/SKW-02
+python3 main.py \
+  --well-name SKW-07 \
+  --input-file "data/input/Data Sensor/SKW-07.csv" \
+  --prod-data "data/input/Data Produksi/SKW-07.csv" \
+  --output-dir "data/output/SKW-07" \
+  --log-level INFO
 ```
 
-The pipeline expects CSV files with the following columns (adjust in `config/config.py` if needed):
+## Arguments
 
-- `Reading Time`: Timestamp of the measurement
-- `Average Amps (A) (Raw)`: Average current
-- `Drive Frequency (Hz) (Raw)`: Drive frequency
-- `Intake Pressure (psi) (Raw)`: Intake pressure
-- `Discharge Pressure (psi) (Raw)`: Discharge pressure (target for prediction)
-- `Intake Temperature (F) (Raw)`: Intake temperature
-- `Motor Temperature (F) (Raw)`: Motor temperature
-- `Vibration (gravit) (Raw)`: Vibration measurement
+### Required
+- `--well-name`: Name of the well (e.g., SKW-07, SKW-18)
 
-### Model Configuration
+### Optional
+- `--input-file`: Path to sensor data CSV
+  - Default: `data/input/{well_name}.csv`
+  - Example: `data/input/Data Sensor/SKW-07.csv`
 
-Model paths and parameters can be configured in `config/config.py`. Update the following sections as needed:
+- `--prod-data`: Path to production/watercut data CSV
+  - Default: `prod_data.csv` in project root
+  - Example: `data/input/Data Produksi/SKW-07.csv`
+  - Format:
+    ```csv
+    Date,WC
+    2025-01-07,100.00
+    2025-01-08,85.50
+    ```
 
-```python
-# Model paths (update these paths after placing your models)
-MODEL_PATHS = {
-    'discharge_pressure': MODEL_DIR / 'discharge_pressure_model.joblib',
-    'virtual_rate': MODEL_DIR / 'virtual_rate_model.joblib',
-    'slope': MODEL_DIR / 'slope_model.joblib',
-    'failure_prediction': MODEL_DIR / 'failure_prediction_model.joblib'
-}
+- `--output-dir`: Output directory for results
+  - Default: `data/output`
+  - Example: `data/output/SKW-07`
 
-# Feature columns for each model
-FEATURE_COLUMNS = {
-    'discharge_pressure': [
-        'Average Amps (A) (Raw)',
-        'Drive Frequency (Hz) (Raw)',
-        'Intake Pressure (psi) (Raw)',
-        'Intake Temperature (F) (Raw)',
-        'Motor Temperature (F) (Raw)',
-        'Vibration (gravit) (Raw)'
-    ],
-    # Add feature columns for other models
-}
+- `--model`: Which model to run
+  - Choices: `all`, `discharge_pressure`, `virtual_rate`, `slope`, `failure_prediction`
+  - Default: `all`
+
+- `--log-level`: Logging verbosity
+  - Choices: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+  - Default: `INFO`
+
+## Examples
+
+### Example 1: Basic run with default paths
+```bash
+# Assumes data/input/SKW-07.csv exists
+python3 main.py --well-name SKW-07
 ```
 
-## Model Training (Optional)
+### Example 2: With custom sensor data path
+```bash
+python3 main.py \
+  --well-name SKW-07 \
+  --input-file "data/input/Data Sensor/SKW-07.csv"
+```
 
-To train new models, you can use the provided Jupyter notebooks in the `notebooks/` directory:
+### Example 3: With both sensor and production data
+```bash
+python3 main.py \
+  --well-name SKW-07 \
+  --input-file "data/input/Data Sensor/SKW-07.csv" \
+  --prod-data "data/input/Data Produksi/SKW-07.csv" \
+  --output-dir "data/output/SKW-07"
+```
 
-1. `Template Discharge Pressure.ipynb`
-2. `Template Virtual Rate.ipynb`
-3. `Template Slope_30 Menit.ipynb`
-4. `Template Failure Pred_30 Menit.ipynb`
+### Example 4: Debug mode
+```bash
+python3 main.py \
+  --well-name SKW-07 \
+  --input-file "data/input/Data Sensor/SKW-07.csv" \
+  --log-level DEBUG
+```
 
-After training, save the models to the `models/` directory using `joblib.dump()`.
+### Example 5: Run specific model only
+```bash
+# Only run failure prediction
+python3 main.py \
+  --well-name SKW-07 \
+  --model failure_prediction
+```
 
-## Output
+## Batch Processing (run_all_wells.py)
 
-By default, the pipeline writes outputs to `data/output/`. You can override this with `--output-dir <path>`.
-
-The following output files are produced in the chosen output directory:
-
-- `{well_name}_{model_name}_predictions.csv`: CSV file containing the model predictions
-- `{well_name}_{model_name}_plot.png`: Plot of the predictions vs. actual values (if available)
-- `logs/{well_name}_analysis.log`: Log file with detailed execution information
-
-## Build Executables (macOS and Windows)
-
-You can package this project into a single-file executable for macOS and Windows using PyInstaller. The executable will:
-
-- Accept the same CLI arguments as `python main.py`.
-- Run the pipeline and save CSVs into the specified output directory (default `data/output/`).
-- Generate plots and attempt to auto-open them in your OS default viewer.
-
-### 1) Install PyInstaller
-
-It is recommended to install PyInstaller into your virtual environment.
+Process all wells in `data/input/Data Sensor/`:
 
 ```bash
-pip install pyinstaller
+python3 run_all_wells.py
 ```
 
-### 2) Build on macOS
+This will:
+1. Find all CSV files in `data/input/Data Sensor/`
+2. For each well, check if corresponding prod_data exists in `data/input/Data Produksi/`
+3. Run full analysis for each well
+4. Save outputs to `data/output/{well_name}/`
 
-Run the following from the project root:
+## Output Files
 
-```bash
-pyinstaller --onefile --name well-analysis \
-  --add-data "config:config" \
-  --add-data "data:data" \
-  --add-data "models:models" \
-  main.py
-```
+For each well, the following files are generated:
 
-Notes:
+### CSV Files
+- `{well_name}_discharge_pressure_predictions.csv` - Discharge pressure predictions
+- `{well_name}_virtual_rate_predictions.csv` - Virtual rate predictions
+- `{well_name}_failure_prediction_30min.csv` - **Main output** with failure predictions and status
 
-- `--add-data` ensures your `config/`, `data/`, and `models/` folders are bundled or available to the executable.
-- On macOS, the resulting binary is created at `dist/well-analysis`.
+### Plot Files
+- `{well_name}_discharge_pressure_plot.png` - Discharge pressure visualization
+- `{well_name}_virtual_rate_plot.png` - Virtual rate visualization
+- `{well_name}_overview_plot.png` - Combined overview plot
 
-Run it:
+### Additional Files (in project root)
+- `df_all.csv` - Resampled 30-minute data
+- `slopes_df_30menit.csv` - Calculated slopes
+- `prediction_results_30menit.csv` - Prediction results (notebook format)
+- `X_predict_30menit.csv` - Feature matrix
+- `failure_features_used_30menit.csv` - Features used for prediction
 
-```bash
-./dist/well-analysis --well-name SKW-18 --model all
-```
+## Status Classes
 
-### 3) Build on Windows
+The pipeline predicts 14 different status classes:
 
-In Windows PowerShell or Command Prompt, run:
+| Class | Status | Description |
+|-------|--------|-------------|
+| 0 | Running | Normal operation |
+| 1 | Low PI | Low productivity index |
+| 2 | Pump Wear | Pump degradation |
+| 3 | Tubing Leak | Tubing integrity issue |
+| 4 | Higher PI | Increased productivity |
+| 5 | Increase in Frequency | Frequency adjustment |
+| 6 | Open Choke | Choke position change |
+| 7 | Increase in Watercut | Rising water content |
+| 8 | Sand Ingestion | Sand production |
+| 9 | Closed Valve | Valve restriction |
+| 10 | Electrical Downhole Problem | EDP detected |
+| 11 | Shut-in | Well shut-in |
+| 12 | 100% Watercut | Complete water production |
+| 13 | Start-up Phase | Post-gap startup period |
 
-```powershell
-pyinstaller --onefile --name well-analysis ^
-  --add-data "config;config" ^
-  --add-data "data;data" ^
-  --add-data "models;models" ^
-  main.py
-```
+## Override Rules
 
-Run it:
+The pipeline applies these rules in order:
 
-```powershell
-dist\well-analysis.exe --well-name SKW-18 --model all
-```
-
-### 4) Optional: Reduce console window on Windows
-
-If you prefer a windowless executable on Windows (still writes logs and opens plots), add `--noconsole`:
-
-```powershell
-pyinstaller --onefile --noconsole --name well-analysis ^
-  --add-data "config;config" ^
-  --add-data "data;data" ^
-  --add-data "models;models" ^
-  main.py
-```
-
-### 5) Passing input file directly
-
-If your input is not located at `data/input/{well_name}.csv`, provide `--input-file`:
-
-```bash
-./dist/well-analysis --well-name SKW-18 --input-file path/to/SKW-18.csv --model all
-```
-
-### 6) What you’ll see at the end
-
-- CSVs created in your chosen output directory (default `data/output/`):
-  - `{well}_discharge_pressure_predictions.csv`
-  - `{well}_virtual_rate_predictions.csv`
-  - `{well}_failure_prediction_30min.csv`
-- Plots auto-opened by the OS and saved under the chosen output directory:
-  - `{well}_discharge_pressure_plot.png`
-  - `{well}_virtual_rate_plot.png`
-  - `{well}_overview_plot.png` (sensor overview + predictions)
-
-If plots do not auto-open (e.g. on headless servers), you can open the PNGs manually from the output directory you specified.
+1. **Watercut Override**: If WC=100% in prod_data → Class 12
+2. **EDP Override**: If Amps=0, Freq=0, no variation → Class 10
+3. **Shut-in Override**: If Amps≈0, Freq≈0, with variation → Class 11
+4. **Start-up Phase**: If gap >3h in resampled data → Class 13
 
 ## Troubleshooting
 
-- **Missing Dependencies**: Ensure all required packages are installed using `pip install -r requirements.txt`
-- **File Not Found**: Check that the input file exists at the specified path
-- **Model Loading Errors**: Verify that the model files exist in the `models/` directory
-- **Memory Issues**: For large datasets, consider processing the data in smaller chunks
+### File not found error
+```bash
+# Make sure file exists
+ls -la "data/input/Data Sensor/SKW-07.csv"
 
-## License
+# Use absolute path if needed
+python3 main.py \
+  --well-name SKW-07 \
+  --input-file "/full/path/to/SKW-07.csv"
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+### Watercut override not working
+```bash
+# Specify prod_data explicitly
+python3 main.py \
+  --well-name SKW-07 \
+  --prod-data "data/input/Data Produksi/SKW-07.csv"
+
+# Check prod_data format
+head data/input/Data Produksi/SKW-07.csv
+```
+
+### View detailed logs
+```bash
+# Use DEBUG level
+python3 main.py --well-name SKW-07 --log-level DEBUG
+
+# Check log file
+cat logs/SKW-07_analysis.log
+```

@@ -35,6 +35,12 @@ def parse_arguments():
     )
     
     parser.add_argument(
+        '--prod-data',
+        type=str,
+        help='Path to prod_data.csv (Watercut data). If not provided, looks in project root (prod_data.csv)'
+    )
+    
+    parser.add_argument(
         '--model', 
         type=str,
         choices=['all', 'discharge_pressure', 'virtual_rate', 'slope', 'failure_prediction'],
@@ -81,6 +87,18 @@ def main():
         input_file = args.input_file
         if input_file is None:
             input_file = Path('data') / 'input' / f'{args.well_name}.csv'
+        
+        # Handle prod_data path if specified
+        if args.prod_data:
+            import shutil
+            prod_data_src = Path(args.prod_data)
+            prod_data_dst = Path(__file__).parent / 'prod_data.csv'
+            
+            if prod_data_src.exists():
+                logger.info(f"Copying prod_data from {prod_data_src} to {prod_data_dst}")
+                shutil.copy(prod_data_src, prod_data_dst)
+            else:
+                logger.warning(f"Specified prod_data file not found: {prod_data_src}")
         
         # Load and preprocess data
         pipeline.load_data(input_file)
