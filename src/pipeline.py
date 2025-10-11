@@ -834,38 +834,37 @@ class WellAnalysisPipeline:
                     "2. Contact the Field Service Tech to check out well on location"
                 ),
                 10: (
-                    "Electrical Downhole Problem suspected.\n"
-                    "1. Verify the surface equipment—ensure VSD, step-up transformer, and junction box are functioning properly to confirm the issue is downhole.\n"
-                    "2. Perform a VSD soft shutdown to prevent reverse current surges that could further damage the motor.\n"
-                    "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
+                    "Electrical Downhole Problem suspected: "
+                    "1) Verify surface equipment (VSD, step-up transformer, junction box) to confirm failure is downhole. "
+                    "2) Perform a VSD soft shutdown to prevent reverse current surges. "
+                    "3) Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
                 ),
                 11: (
                     "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
                 ),
                 12: (
-                    "Well producing 100% water — possible water breakthrough or reservoir depletion.\n"
-                    "The Possible Causes:\n"
-                    "1. Water coning or channeling from aquifer or water zone.\n"
-                    "2. Casing/tubing leak allowing water influx.\n"
-                    "3. Reservoir pressure depletion causing full water encroachment.\n\n"
-                    "RECOMMENDED ACTIONS:\n"
-                    "1. Verify production test to confirm 100% watercut (check separator test or sampling).\n"
-                    "2. Check GOR trend — if near zero, indicates water dominance.\n"
-                    "3. Review well completion diagram to identify possible water source.\n"
-                    "4. Consider temporary shut-in or zonal isolation (mechanical plug or water shutoff job).\n"
-                    "5. Evaluate feasibility of re-perforation in upper/lower zones or water shutoff chemical treatment."
+                    "Well producing 100% water — likely water breakthrough or reservoir depletion: "
+                    "Causes: 1) Water coning/channeling from aquifer, 2) Casing/tubing leak allowing water influx, 3) Reservoir pressure depletion. "
+                    "Recommended actions: 1) Verify production test (separator test or sampling), 2) Check GOR trend (near zero indicates water dominance), "
+                    "3) Review well completion to find water source, 4) Consider temporary shut-in or zonal isolation, 5) Evaluate re-perforation or water-shutoff treatment."
                 ),
                 13: (
-                    "Start-up Phase detected after an extended data gap."
-                    " 1. Monitor equipment parameters closely during ramp-up."
-                    " 2. Verify that surface controls (choke, VSD settings) follow the planned start-up procedure."
-                    " 3. Confirm downhole pressures/temperatures stabilize before returning to normal operations."
+                    "Start-up Phase after extended data gap: 1) Monitor equipment closely during ramp-up, "
+                    "2) Ensure surface controls follow the planned start-up procedure, "
+                    "3) Confirm downhole pressures and temperatures stabilize before normal operation."
                 ),
             }
             return recs.get(x, " ")
 
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
+        out['Recommendation'] = (
+            out['Recommendation']
+            .astype(str)
+            .str.replace('\n', ' ', regex=False)
+            .str.replace(r'\s+', ' ', regex=True)
+            .str.strip()
+        )
 
         # Apply additional rules using vectorized operations
         try:
@@ -937,6 +936,13 @@ class WellAnalysisPipeline:
             # Remap Status/Recommendation after overrides
             out['Status'] = out['Prediction'].apply(status_map)
             out['Recommendation'] = out['Prediction'].apply(recommendation_map)
+            out['Recommendation'] = (
+                out['Recommendation']
+                .astype(str)
+                .str.replace('\n', ' ', regex=False)
+                .str.replace(r'\s+', ' ', regex=True)
+                .str.strip()
+            )
 
             # Keep all statuses from template: Low PI, Shut-in, 100% Watercut, EDP, Running, etc.
             # No restriction - allow all classes as per template
@@ -1187,7 +1193,7 @@ class WellAnalysisPipeline:
                     df_to_save['Recommendation']
                     .astype(str)
                     .str.replace('\n', ' ', regex=False)
-                    .str.replace('  ', ' ', regex=True)
+                    .str.replace(r'\s+', ' ', regex=True)
                     .str.strip()
                 )
             df_to_save.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
