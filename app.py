@@ -1,5 +1,6 @@
 import io
 import base64
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -33,6 +34,16 @@ def fig_to_base64(fig) -> str:
 @app.route('/', methods=['GET'])
 def index():
     return render_template('upload.html')
+
+
+def _sync_prod_data(prod_path: Path) -> None:
+    """Copy uploaded production data to project root so pipeline matches CLI behavior."""
+    try:
+        project_root = Path(__file__).resolve().parent
+        dest = project_root / 'prod_data.csv'
+        shutil.copy(prod_path, dest)
+    except Exception as exc:
+        print(f"[sync_prod_data] warning: {exc}")
 
 
 def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: Optional[str] = None, zoom_end: Optional[str] = None):
@@ -74,6 +85,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     # Load failure prediction table from saved CSV
     pred_csv = OUTPUT_DIR / f"{well_name}_failure_prediction_30min.csv"
     pred_df = None
+    latest_failure = None
     if pred_csv.exists():
         pred_df = pd.read_csv(pred_csv)
 
@@ -91,6 +103,16 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         pdf = pred_df.copy()
         pdf['Window_Start_Time'] = pd.to_datetime(pdf['Window_Start_Time'], errors='coerce')
         pdf = pdf.dropna(subset=['Window_Start_Time']).sort_values('Window_Start_Time')
+        pdf['Status'] = pdf['Status'].astype(str).str.strip()
+        pdf_valid = pdf[~pdf['Status'].str.lower().isin(['', 'nan'])]
+        non_running = pdf_valid[pdf_valid['Status'].str.lower() != 'running']
+        if not non_running.empty:
+            latest = non_running.sort_values('Window_Start_Time').iloc[-1]
+            latest_failure = {
+                'timestamp': latest['Window_Start_Time'].strftime('%Y-%m-%d %H:%M:%S'),
+                'status': latest['Status'],
+                'recommendation': str(latest.get('Recommendation', '') or '').strip(),
+            }
         pdf['date'] = pdf['Window_Start_Time'].dt.normalize()
         pdf['group_start'] = pdf['Window_Start_Time'].dt.floor('3H')
         pdf['group_end'] = pdf['group_start'] + pd.Timedelta(hours=3)
@@ -317,6 +339,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         pie_nonrun_b64=pie_nonrun_b64,
         zoom_links=zoom_links,
         slope_json=json.dumps(slope_data or {}),
+        latest_failure=latest_failure,
         daily_bar_data=daily_bar_data,
     )
 
@@ -489,6 +512,7 @@ def analyze():
                 if 'Date' in df_wc.columns:
                     df_wc['Date'] = pd.to_datetime(df_wc['Date'], errors='coerce').dt.normalize()
                 pipeline.df_wc = df_wc
+                _sync_prod_data(prod_path)
             except Exception:
                 pass
 
@@ -526,6 +550,7 @@ def results():
                 if 'Date' in df_wc.columns:
                     df_wc['Date'] = pd.to_datetime(df_wc['Date'], errors='coerce').dt.normalize()
                 pipeline.df_wc = df_wc
+                _sync_prod_data(prod_path)
             except Exception:
                 pass
         # Run pipeline and render with zoom

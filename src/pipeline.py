@@ -426,13 +426,28 @@ class WellAnalysisPipeline:
 
             # 1. Discharge Pressure Prediction (predicted_discharge_pressure)
             logger.info("1/4 - Running discharge pressure prediction...")
+            dp_col = 'Discharge Pressure (psi) (Raw)'
+            has_dp_col = dp_col in self.data.columns
+            dp_series = self.data[dp_col] if has_dp_col else pd.Series(dtype=float)
+            dp_all_nan = (not has_dp_col) or dp_series.isna().all()
+
             discharge_pressure = self.predict('discharge_pressure')
             results['discharge_pressure'] = discharge_pressure
-            self.data['Discharge Pressure (psi) (Raw)'] = (
-                self.data.get('Discharge Pressure (psi) (Raw)', pd.Series(index=self.data.index))
-            )
-            # store predicted to a separate column for downstream visibility
+
+            # Always retain the raw DP column if it already exists
+            if not has_dp_col:
+                self.data[dp_col] = np.nan
+
+            # Store predicted values for auditing
             self.data['predicted_discharge_pressure'] = discharge_pressure
+
+            # Only overwrite the raw column when it matches the notebook condition (all NaN)
+            if dp_all_nan:
+                logger.info("DP column entirely NaN → overwriting with model predictions to mirror notebook behavior")
+                self.data[dp_col] = discharge_pressure
+
+            # Export intermediate file just like the notebook
+            self._export_notebook_style_csv('SKW Final.csv', self.data)
 
             # 2. Virtual Rate: only predict if missing; otherwise keep existing VR and store prediction separately for reference
             logger.info("2/4 - Virtual rate handling...")
@@ -468,6 +483,9 @@ class WellAnalysisPipeline:
                         self.data.loc[zero_mask, vr_col] = 0.0
                 except Exception as e:
                     logger.warning(f"Could not compute virtual rate prediction for overwrite: {e}")
+
+            # Export the post-VR dataset exactly like the notebook
+            self._export_notebook_style_csv('SKW_final_w_Pd.csv', self.data)
 
             # 3. Resample to 30-minute grid (df_all equivalent)
             logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
@@ -1021,6 +1039,20 @@ class WellAnalysisPipeline:
         # keep only Date and WC
         self.df_wc = df[['Date', 'WC']].dropna(subset=['Date']).reset_index(drop=True)
         logger.info(f"Loaded Watercut data with {len(self.df_wc)} rows from {csv_path}")
+
+    def _export_notebook_style_csv(self, filename: str, dataframe: pd.DataFrame) -> None:
+        """Replicate notebook CSV exports while stripping internal helper columns."""
+        try:
+            project_root = Path(__file__).resolve().parents[1]
+            export_path = project_root / filename
+            export_df = dataframe.copy()
+            internal_cols = [c for c in export_df.columns if c.startswith('predicted_')]
+            if internal_cols:
+                export_df = export_df.drop(columns=internal_cols, errors='ignore')
+            export_df.to_csv(export_path, index=False)
+            logger.info(f"Exported notebook-style CSV to: {export_path}")
+        except Exception as exc:
+            logger.warning(f"Failed to export {filename}: {exc}")
     
     def _save_results(self, results: Dict[str, np.ndarray]) -> None:
         """Save prediction results to CSV files.

@@ -10,6 +10,8 @@
     img.plot { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 6px; }
     .table-wrap { max-height: 480px; overflow: auto; }
     .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .status-critical { background-color: #ffb3c1 !important; color: #5c0011 !important; font-weight: 600; }
+    .status-critical td { background-color: #ffb3c1 !important; border-color: #ff6f91 !important; color: #5c0011 !important; }
   </style>
 </head>
 <body>
@@ -18,6 +20,21 @@
       <h1 class="mb-0">Results - {{ well_name }}</h1>
       <a class="btn btn-secondary" href="{{ url_for('index') }}">← New Analysis</a>
     </div>
+
+    {% if latest_failure %}
+      <div class="alert alert-danger shadow-sm" role="alert">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+          <div>
+            <strong>Latest Failure:</strong>
+            <span class="badge text-bg-dark ms-2">{{ latest_failure.status }}</span>
+            <span class="ms-2">{{ latest_failure.timestamp }}</span>
+          </div>
+          {% if latest_failure.recommendation %}
+            <div class="small">Recommendation: {{ latest_failure.recommendation }}</div>
+          {% endif %}
+        </div>
+      </div>
+    {% endif %}
 
     <div class="row g-4">
 
@@ -129,7 +146,7 @@
                   </thead>
                   <tbody>
                     {% for row in table_preview %}
-                      <tr class="{% if row['Status'] and row['Status'] != 'Running' %}table-warning{% endif %}">
+                      <tr class="{% if row['Status'] and row['Status'] != 'Running' %}status-critical{% endif %}">
                         {% for col in table_columns %}
                           <td>{{ row[col] }}</td>
                         {% endfor %}
@@ -179,7 +196,7 @@
                   </thead>
                   <tbody>
                     {% for g in group_summaries %}
-                      <tr class="{% if g['dominant_status'] != 'Running' %}table-warning{% endif %}">
+                      <tr class="{% if g['dominant_status'] != 'Running' %}status-critical{% endif %}">
                         <td>{{ g['date'] }}</td>
                         <td>{{ g['group_start'] }}</td>
                         <td>{{ g['group_end'] }}</td>
