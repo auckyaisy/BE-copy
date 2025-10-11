@@ -833,11 +833,34 @@ class WellAnalysisPipeline:
                     "1. Verify if the valve was deliberately partially closed by Field Service Tech\n"
                     "2. Contact the Field Service Tech to check out well on location"
                 ),
+                10: (
+                    "Electrical Downhole Problem suspected.\n"
+                    "1. Verify the surface equipment—ensure VSD, step-up transformer, and junction box are functioning properly to confirm the issue is downhole.\n"
+                    "2. Perform a VSD soft shutdown to prevent reverse current surges that could further damage the motor.\n"
+                    "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
+                ),
                 11: (
                     "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
                 ),
-                12: " ",
-                13: " ",
+                12: (
+                    "Well producing 100% water — possible water breakthrough or reservoir depletion.\n"
+                    "The Possible Causes:\n"
+                    "1. Water coning or channeling from aquifer or water zone.\n"
+                    "2. Casing/tubing leak allowing water influx.\n"
+                    "3. Reservoir pressure depletion causing full water encroachment.\n\n"
+                    "RECOMMENDED ACTIONS:\n"
+                    "1. Verify production test to confirm 100% watercut (check separator test or sampling).\n"
+                    "2. Check GOR trend — if near zero, indicates water dominance.\n"
+                    "3. Review well completion diagram to identify possible water source.\n"
+                    "4. Consider temporary shut-in or zonal isolation (mechanical plug or water shutoff job).\n"
+                    "5. Evaluate feasibility of re-perforation in upper/lower zones or water shutoff chemical treatment."
+                ),
+                13: (
+                    "Start-up Phase detected after an extended data gap."
+                    " 1. Monitor equipment parameters closely during ramp-up."
+                    " 2. Verify that surface controls (choke, VSD settings) follow the planned start-up procedure."
+                    " 3. Confirm downhole pressures/temperatures stabilize before returning to normal operations."
+                ),
             }
             return recs.get(x, " ")
 
@@ -1159,6 +1182,14 @@ class WellAnalysisPipeline:
             base_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation']
             cols = base_cols + (['Reason'] if 'Reason' in final_df.columns else [])
             df_to_save = final_df[cols].copy() if all(c in final_df.columns for c in cols) else final_df.copy()
+            if 'Recommendation' in df_to_save.columns:
+                df_to_save['Recommendation'] = (
+                    df_to_save['Recommendation']
+                    .astype(str)
+                    .str.replace('\n', ' ', regex=False)
+                    .str.replace('  ', ' ', regex=True)
+                    .str.strip()
+                )
             df_to_save.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
             logger.info(f"Saved final failure results to: {output_file}")
 
@@ -1170,6 +1201,8 @@ class WellAnalysisPipeline:
                 if 'Window_Start_Time' in df_nb.columns:
                     dt = pd.to_datetime(df_nb['Window_Start_Time'], errors='coerce')
                     df_nb['Date'] = dt.dt.strftime('%Y-%m-%d')
+                if 'Recommendation' in df_nb.columns:
+                    df_nb['Recommendation'] = df_nb['Recommendation'].astype(str).str.strip()
                 # Ensure exact column order per template
                 nb_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
                 for c in nb_cols:
