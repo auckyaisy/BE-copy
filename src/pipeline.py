@@ -449,40 +449,33 @@ class WellAnalysisPipeline:
             # Export intermediate file just like the notebook
             self._export_notebook_style_csv('SKW Final.csv', self.data)
 
-            # 2. Virtual Rate: only predict if missing; otherwise keep existing VR and store prediction separately for reference
+            # 2. Virtual Rate: EXACT sesuai notebook - dropna() sebelum prediksi, lalu zero rule
             logger.info("2/4 - Virtual rate handling...")
             vr_col = 'Virtual Rate (BFPD) (Raw)'
-            need_predict_vr = (vr_col not in self.data.columns) or (self.data[vr_col].isna().all())
-            if need_predict_vr:
-                logger.info("Virtual Rate column missing/empty; running prediction")
-                virtual_rate = self.predict('virtual_rate')
-                results['virtual_rate'] = virtual_rate
-                self.data[vr_col] = virtual_rate
-                # Apply rule: if Amps==0 and Freq==0 then Virtual Rate = 0 (only for predicted VR)
-                if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
-                    zero_mask = (
-                        (self.data['Average Amps (A) (Raw)'].fillna(0) == 0)
-                        & (self.data['Drive Frequency (Hz) (Raw)'].fillna(0) == 0)
-                    )
-                    self.data.loc[zero_mask, vr_col] = 0.0
-            else:
-                logger.info("Virtual Rate column exists; predicting and overwriting to match template behavior")
-                try:
-                    # Predict VR and overwrite raw column like the template
-                    virtual_rate_pred = self.predict('virtual_rate')
-                    results['virtual_rate'] = virtual_rate_pred
-                    self.data['predicted_virtual_rate'] = virtual_rate_pred
-                    # Overwrite raw VR with prediction
-                    self.data[vr_col] = virtual_rate_pred
-                    # Apply zeroing rule when Amps==0 and Freq==0
-                    if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
-                        zero_mask = (
-                            (self.data['Average Amps (A) (Raw)'].fillna(0) == 0)
-                            & (self.data['Drive Frequency (Hz) (Raw)'].fillna(0) == 0)
-                        )
-                        self.data.loc[zero_mask, vr_col] = 0.0
-                except Exception as e:
-                    logger.warning(f"Could not compute virtual rate prediction for overwrite: {e}")
+            
+            # Notebook flow: baca SKW Final.csv, dropna(), predict VR
+            # Simpan data sebelum dropna untuk preservasi
+            data_before_dropna = self.data.copy()
+            
+            # EXACT notebook line 179: df.dropna(inplace=True)
+            self.data = self.data.dropna()
+            logger.info(f"Dropped NaN rows before VR prediction: {len(data_before_dropna)} -> {len(self.data)} rows")
+            
+            # Predict VR (selalu predict seperti notebook, tidak cek exist)
+            logger.info("Running Virtual Rate prediction (notebook behavior)")
+            virtual_rate = self.predict('virtual_rate')
+            results['virtual_rate'] = virtual_rate
+            self.data[vr_col] = virtual_rate
+            
+            # EXACT notebook lines 198-202: Apply zero rule dengan lambda/apply logic
+            if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
+                logger.info("Applying zero rule: if Amps==0 and Freq==0 then VR=0")
+                # Notebook menggunakan exact comparison (==0), bukan fillna
+                self.data[vr_col] = self.data.apply(
+                    lambda row: 0 if (row['Average Amps (A) (Raw)'] == 0 and row['Drive Frequency (Hz) (Raw)'] == 0)
+                    else row[vr_col],
+                    axis=1
+                )
 
             # Export the post-VR dataset exactly like the notebook
             self._export_notebook_style_csv('SKW_final_w_Pd.csv', self.data)
@@ -898,17 +891,48 @@ class WellAnalysisPipeline:
             v_s = merged.get('V', pd.Series(np.nan, index=merged.index)).fillna(0.0)
             r_s = merged.get('R', pd.Series(np.nan, index=merged.index)).fillna(0.0)
 
-            # Variation proxy: any slope magnitude above tolerance in the window
-            any_variation = (dp_s.abs() > TOL) | (it_s.abs() > TOL) | (mt_s.abs() > TOL) | (v_s.abs() > TOL) | (r_s.abs() > TOL)
+            # EXACT notebook lines 868-920: Cek variasi dari RAW data dalam window, bukan dari slopes
+            # Kolom yang dicek untuk variasi (notebook line 869-876)
+            cols_check = [
+                "Intake Pressure (psi) (Raw)",
+                "Discharge Pressure (psi) (Raw)",
+                "Intake Temperature (F) (Raw)",
+                "Motor Temperature (F) (Raw)",
+                "Vibration (gravit) (Raw)",
+                "Virtual Rate (BFPD) (Raw)"
+            ]
+            
+            # Build has_variation Series by checking raw data within each 30-min window
+            has_variation_list = []
+            for idx in merged.index:
+                window_start = merged.loc[idx, 'Window_Start_Time']
+                if pd.isna(window_start):
+                    has_variation_list.append(False)
+                    continue
+                window_end = window_start + pd.Timedelta(minutes=30)
+                
+                # Get raw data subset for this window (notebook lines 909-920)
+                subset_ori = self.data[
+                    (self.data['Reading Time'] >= window_start) &
+                    (self.data['Reading Time'] < window_end)
+                ]
+                
+                has_var = False
+                if not subset_ori.empty:
+                    for c in cols_check:
+                        if c in subset_ori.columns and subset_ori[c].nunique() > 1:
+                            has_var = True
+                            break
+                has_variation_list.append(has_var)
+            
+            any_variation = pd.Series(has_variation_list, index=merged.index)
 
-            # Shut-in mask
+            # Shut-in mask - sesuai notebook: hanya cek VR, DP, dan Vibration (bukan semua kolom)
             amps_zero = np.isclose(amps, 0.0, atol=TOL)
             freq_zero = np.isclose(freq, 0.0, atol=TOL)
             other_zero = (
                 np.isclose(rate, 0.0, atol=TOL)
                 & np.isclose(merged.get('Discharge Pressure (psi) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
-                & np.isclose(merged.get('Intake Temperature (F) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
-                & np.isclose(merged.get('Motor Temperature (F) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
                 & np.isclose(merged.get('Vibration (gravit) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
             )
             mask_shutin = amps_zero & freq_zero & (other_zero | any_variation)
@@ -959,55 +983,39 @@ class WellAnalysisPipeline:
             if lowpi_idx.any():
                 out.loc[lowpi_idx, 'Reason'] = 'Model: Low PI'
 
-            # --- Start-up Phase Detection ---
-            # NOTE: Template uses resampled data, but resampling with forward fill creates
-            # continuous data with no gaps. So we detect gaps from RAW sensor data instead.
+            # --- Start-up Phase Detection - EXACT sesuai notebook ---
+            # Notebook deteksi gap dari prediction_results_df (windowed data), bukan raw data
+            # Lines 954-993 di notebook
             out = out.sort_values('Window_Start_Time').reset_index(drop=True)
             out['Status'] = out['Status'].str.strip()
 
-            # Detect gaps from raw sensor data (self.data) before resampling
-            if self.data is not None and 'Reading Time' in self.data.columns:
-                raw_data = self.data.copy()
-                raw_data['Reading Time'] = pd.to_datetime(raw_data['Reading Time'], errors='coerce')
-                raw_data = raw_data.sort_values('Reading Time').reset_index(drop=True)
+            # EXACT notebook lines 957-993: Loop through windowed predictions untuk cari gap
+            for i in range(1, len(out)):
+                prev_time = out.loc[i-1, 'Window_Start_Time']
+                curr_time = out.loc[i, 'Window_Start_Time']
+                gap_hours = (curr_time - prev_time).total_seconds() / 3600.0
                 
-                # Find all gaps >3 hours in raw data
-                gap_times = []
-                for i in range(1, len(raw_data)):
-                    prev_time = raw_data.loc[i-1, 'Reading Time']
-                    curr_time = raw_data.loc[i, 'Reading Time']
-                    if pd.notna(prev_time) and pd.notna(curr_time):
-                        gap_hours = (curr_time - prev_time).total_seconds() / 3600.0
-                        if gap_hours > 3:
-                            gap_times.append(curr_time)
-                
-                logger.info(f"Found {len(gap_times)} gaps >3h in raw sensor data")
-                
-                # For each gap, apply Start-up Phase logic
-                for gap_start_time in gap_times:
-                    # Find first window that contains or is after the gap
-                    after_gap_mask = out['Window_Start_Time'] >= gap_start_time
-                    if not after_gap_mask.any():
-                        continue
+                if gap_hours > 3:  # gap terdeteksi (notebook line 962)
+                    # bacaan pertama setelah gap
+                    first_after_gap_idx = i
+                    first_after_gap_time = curr_time
                     
-                    first_after_gap_idx = out[after_gap_mask].index[0]
-                    first_after_gap_time = out.loc[first_after_gap_idx, 'Window_Start_Time']
+                    logger.info(f"Gap detected: {gap_hours:.1f}h between {prev_time} and {curr_time}")
                     
-                    logger.info(f"Processing gap at {gap_start_time}, first window after: {first_after_gap_time}")
-                    
-                    # cari Shut-in dalam 3 hari setelah first_after_gap_time
+                    # cari Shut-in dalam 3 hari setelah first_after_gap_time (notebook lines 967-973)
                     three_days_later = first_after_gap_time + pd.Timedelta(days=3)
                     shutin_indices = out[
                         (out['Window_Start_Time'] >= first_after_gap_time) &
                         (out['Window_Start_Time'] <= three_days_later) &
                         (out['Status'] == 'Shut-in')
                     ].index
-
+                    
                     if len(shutin_indices) > 0:
-                        # ambil Shut-in terjauh
+                        # ambil Shut-in terjauh (notebook line 977)
                         last_shutin_idx = shutin_indices[-1]
                         logger.info(f"Found Shut-in, marking Start-up Phase from idx {first_after_gap_idx} to {last_shutin_idx}")
                         # semua selain Shut-in antara first_after_gap_idx sampai last_shutin_idx → Start-up Phase
+                        # Notebook lines 979-982
                         for j in range(first_after_gap_idx, last_shutin_idx):
                             if out.loc[j, 'Status'] != 'Shut-in':
                                 out.at[j, 'Prediction'] = 13
@@ -1015,6 +1023,7 @@ class WellAnalysisPipeline:
                                 out.at[j, 'Reason'] = 'Rule: Start-up Phase after gap'
                     else:
                         # tidak ada Shut-in, ubah EDP 24 jam ke depan menjadi Start-up Phase
+                        # Notebook lines 984-993
                         end_24h = first_after_gap_time + pd.Timedelta(hours=24)
                         edp_indices = out[
                             (out['Window_Start_Time'] >= first_after_gap_time) &

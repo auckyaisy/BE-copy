@@ -9,10 +9,10 @@ python3 main.py --well-name SKW-07
 
 ```bash
 python3 main.py \
-  --well-name SKW-07 \
-  --input-file "data/input/Data Sensor/SKW-07.csv" \
-  --prod-data "data/input/Data Produksi/SKW-07.csv" \
-  --output-dir "data/output/SKW-07" \
+  --well-name SKW-33 \
+  --prod-data "/Users/m/Downloads/mba_sivly/BE-copy/data/input/Data Produksi/SKW-33.csv" \
+  --input-file "/Users/m/Downloads/mba_sivly/BE-copy/data/input/Data Sensor/SKW-33.csv" \
+  --output-dir "data/output/SKW-33" \
   --log-level INFO
 ```
 
