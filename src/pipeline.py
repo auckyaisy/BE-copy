@@ -449,42 +449,52 @@ class WellAnalysisPipeline:
             # Export intermediate file just like the notebook
             self._export_notebook_style_csv('SKW Final.csv', self.data)
 
-            # 2. Virtual Rate: EXACT sesuai notebook - dropna() sebelum prediksi, lalu zero rule
+            # 2. Virtual Rate: replicate notebook exactly (dropna before predict, zero rule)
             logger.info("2/4 - Virtual rate handling...")
             vr_col = 'Virtual Rate (BFPD) (Raw)'
-            
-            # Notebook flow: baca SKW Final.csv, dropna(), predict VR
-            # Simpan data sebelum dropna untuk preservasi
+
+            # Notebook line 179: df.dropna(inplace=True)
             data_before_dropna = self.data.copy()
-            
-            # EXACT notebook line 179: df.dropna(inplace=True)
-            self.data = self.data.dropna()
+            self.data = self.data.dropna().reset_index(drop=True)
             logger.info(f"Dropped NaN rows before VR prediction: {len(data_before_dropna)} -> {len(self.data)} rows")
-            
-            # Predict VR (selalu predict seperti notebook, tidak cek exist)
+
+            # Predict VR exactly as notebook
             logger.info("Running Virtual Rate prediction (notebook behavior)")
             virtual_rate = self.predict('virtual_rate')
             results['virtual_rate'] = virtual_rate
             self.data[vr_col] = virtual_rate
-            
-            # EXACT notebook lines 198-202: Apply zero rule dengan lambda/apply logic
+
             if {'Average Amps (A) (Raw)', 'Drive Frequency (Hz) (Raw)'}.issubset(self.data.columns):
                 logger.info("Applying zero rule: if Amps==0 and Freq==0 then VR=0")
-                # Notebook menggunakan exact comparison (==0), bukan fillna
                 self.data[vr_col] = self.data.apply(
                     lambda row: 0 if (row['Average Amps (A) (Raw)'] == 0 and row['Drive Frequency (Hz) (Raw)'] == 0)
                     else row[vr_col],
                     axis=1
                 )
 
-            # Export the post-VR dataset exactly like the notebook
+            # Export identical to notebook
             self._export_notebook_style_csv('SKW_final_w_Pd.csv', self.data)
 
-            # 3. Resample to 30-minute grid (df_all equivalent)
-            logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
-            df_all = self._build_df_all_30min(self.data)
+            # Prepare dataframe exactly like notebook (df1)
+            df1 = self.data.copy().reset_index(drop=True)
+            if 'predicted_discharge_pressure' in df1.columns:
+                df1 = df1.drop(columns=['predicted_discharge_pressure'])
 
-            # Save df_all.csv at project root to mirror template output
+            # Notebook drops column index 4 before slope calc
+            df_for_slopes = df1.drop(df1.columns[4], axis=1)
+
+            # Compute df_all (30-minute resample) identical to notebook code
+            logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
+            df_all = df1.copy()
+            df_all['Reading Time'] = pd.to_datetime(df_all['Reading Time'], errors='coerce')
+            df_all = (
+                df_all.set_index('Reading Time')
+                      .resample('30T', origin='epoch')
+                      .mean(numeric_only=True)
+                      .reset_index()
+            )
+
+            # Save df_all exactly as notebook
             try:
                 project_root = Path(__file__).resolve().parents[1]
                 df_all_path = project_root / 'df_all.csv'
@@ -493,72 +503,84 @@ class WellAnalysisPipeline:
             except Exception as e:
                 logger.warning(f"Could not save df_all.csv: {e}")
 
-            # Save 30-minute resampled DP and VR to compare with notebooks
-            try:
-                dp_col = 'Discharge Pressure (psi) (Raw)'
-                vr_col = 'Virtual Rate (BFPD) (Raw)'
-                if dp_col in df_all.columns:
-                    dp30_path = self.output_dir / f"{self.well_name}_discharge_pressure_30min.csv"
-                    df_all[['Reading Time', dp_col]].rename(columns={dp_col: 'discharge_pressure'}).to_csv(dp30_path, index=False)
-                if vr_col in df_all.columns:
-                    vr30_path = self.output_dir / f"{self.well_name}_virtual_rate_30min.csv"
-                    df_all[['Reading Time', vr_col]].rename(columns={vr_col: 'virtual_rate'}).to_csv(vr30_path, index=False)
-            except Exception as e:
-                logger.warning(f"Could not save 30-minute DP/VR CSVs: {e}")
-
-            # 4. Compute per-window slopes over 30-minute windows (slopes_df equivalent)
+            # 4. Compute slopes exactly as notebook
             logger.info("4/4 - Computing 30-minute window slopes...")
-            slopes_df = self._compute_window_slopes_30min(self.data)
+            df_for_slopes = df_for_slopes.copy()
+            df_for_slopes['Reading Time'] = pd.to_datetime(df_for_slopes['Reading Time'], errors='coerce')
+            df_for_slopes = df_for_slopes.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
 
-            # Prepare slope features (df11 equivalent): A, IP, DP, IT, MT, V, R
-            expected_cols = ['A', 'IP', 'DP', 'IT', 'MT', 'V', 'R']
-            # Some windows may be missing columns; create safely
-            if slopes_df.empty:
-                df11 = pd.DataFrame(columns=expected_cols)
+            if df_for_slopes.empty:
+                slopes_df = pd.DataFrame(columns=['Window_Start_Time','A','IP','DP','IT','MT','V','R'])
             else:
-                missing = [c for c in expected_cols if c not in slopes_df.columns]
-                tmp = slopes_df.copy()
-                for c in missing:
-                    tmp[c] = 0.0
-                df11 = tmp[expected_cols].copy()
+                time_interval = pd.Timedelta(minutes=30)
+                start_time = df_for_slopes['Reading Time'].iloc[0].floor('30min')
+                end_time = df_for_slopes['Reading Time'].iloc[-1].ceil('30min')
+                time_windows = pd.date_range(start=start_time, end=end_time, freq='30min')
+                numerical_cols = df_for_slopes.select_dtypes(include=np.number).columns.tolist()
 
-            # Save X_predict_30menit.csv at project root to mirror notebook output
+                from scipy.stats import linregress
+
+                slopes_list = []
+                for window_start in time_windows:
+                    window_end = window_start + time_interval
+                    window_df = df_for_slopes[(df_for_slopes['Reading Time'] >= window_start) & (df_for_slopes['Reading Time'] < window_end)]
+                    if len(window_df) < 2:
+                        continue
+
+                    window_slopes = {}
+                    for col in numerical_cols:
+                        temp_df = window_df[['Reading Time', col]].dropna()
+                        if len(temp_df) > 1:
+                            temp_time_diff = (temp_df['Reading Time'] - window_start).dt.total_seconds().values
+                            slope, _, _, _, _ = linregress(temp_time_diff, temp_df[col])
+                            window_slopes[f"{col}_slope"] = slope
+                        else:
+                            window_slopes[f"{col}_slope"] = np.nan
+                    window_slopes['Window_Start_Time'] = window_start
+                    slopes_list.append(window_slopes)
+
+                slopes_raw = pd.DataFrame(slopes_list)
+                if slopes_raw.empty:
+                    slopes_df = pd.DataFrame(columns=['Window_Start_Time','A','IP','DP','IT','MT','V','R'])
+                else:
+                    slopes_raw = slopes_raw.set_index('Window_Start_Time').reset_index()
+                    # Expected order of slope columns as produced by notebook
+                    slope_cols_mapping = [
+                        ('Average Amps (A) (Raw)_slope', 'A'),
+                        ('Intake Pressure (psi) (Raw)_slope', 'IP'),
+                        ('Discharge Pressure (psi) (Raw)_slope', 'DP'),
+                        ('Intake Temperature (F) (Raw)_slope', 'IT'),
+                        ('Motor Temperature (F) (Raw)_slope', 'MT'),
+                        ('Vibration (gravit) (Raw)_slope', 'V'),
+                        ('Virtual Rate (BFPD) (Raw)_slope', 'R'),
+                    ]
+                    slopes_df = slopes_raw[['Window_Start_Time']].copy()
+                    for src, dst in slope_cols_mapping:
+                        slopes_df[dst] = slopes_raw.get(src, pd.Series(np.nan, index=slopes_raw.index))
+
+            # Prepare df11 features
+            expected_cols = ['A', 'IP', 'DP', 'IT', 'MT', 'V', 'R']
+            df11 = slopes_df[expected_cols].copy() if not slopes_df.empty else pd.DataFrame(columns=expected_cols)
+
+            # Save slopes/X_predict exactly like notebook
             try:
                 project_root = Path(__file__).resolve().parents[1]
+                slopes_path = project_root / 'slopes_df_30menit.csv'
+                slopes_df.to_csv(slopes_path, index=False)
+                logger.info(f"Saved slopes_df_30menit to: {slopes_path}")
+
                 xpred_path = project_root / 'X_predict_30menit.csv'
                 df11.to_csv(xpred_path, index=False)
-                logger.info(f"Saved per-30-minute slopes to: {xpred_path}")
-                # Also save slopes with timestamps for traceability
-                slopes_with_ts = slopes_df[['Window_Start_Time']].copy()
-                for c in expected_cols:
-                    slopes_with_ts[c] = tmp[c] if 'tmp' in locals() and c in tmp.columns else (slopes_df[c] if c in slopes_df.columns else 0.0)
-                slopes_ts_path = project_root / 'slopes_df_30menit.csv'
-                slopes_with_ts.to_csv(slopes_ts_path, index=False)
-                logger.info(f"Saved slopes_df_30menit to: {slopes_ts_path}")
-                # Save the exact features used with Window_Start_Time for audit and for inference parity
-                features_used = slopes_with_ts.copy()
-                features_used_path = project_root / 'failure_features_used_30menit.csv'
-                features_used.to_csv(features_used_path, index=False)
-                logger.info(f"Saved failure_features_used_30menit to: {features_used_path}")
+                logger.info(f"Saved X_predict_30menit to: {xpred_path}")
             except Exception as e:
-                logger.warning(f"Could not save X_predict_30menit.csv: {e}")
+                logger.warning(f"Could not save slope feature CSVs: {e}")
 
-            # 5. Failure Prediction on windowed slope features
+            # 5. Failure Prediction using df11 (exact notebook behavior)
             if df11 is None or len(df11) == 0:
                 logger.warning("No slope feature rows available; using zeros for failure prediction output")
                 failure_pred = np.zeros(len(slopes_df), dtype=int)
             else:
-                # Load the just-saved features with timestamps to ensure parity with disk outputs
-                try:
-                    project_root = Path(__file__).resolve().parents[1]
-                    features_used_path = project_root / 'failure_features_used_30menit.csv'
-                    fu = pd.read_csv(features_used_path)
-                    # Keep only expected feature columns in correct order
-                    infer_df = fu[[c for c in expected_cols if c in fu.columns]].copy()
-                    failure_pred = self.predict('failure_prediction', data=infer_df)
-                except Exception as e:
-                    logger.warning(f"Fell back to in-memory features for prediction: {e}. Using df11 in-memory.")
-                    failure_pred = self.predict('failure_prediction', data=df11)
+                failure_pred = self.predict('failure_prediction', data=df11)
             results['failure_prediction'] = failure_pred
 
             # Assemble final result DataFrame to match template
@@ -681,7 +703,7 @@ class WellAnalysisPipeline:
         return df_resampled
 
     def _compute_window_slopes_30min(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Compute per-30-minute linear slopes identical to the notebooks.
+        """
         - Build explicit windows with pd.date_range aligned to :00/:30
         - Use seconds since window start and scipy linregress
         - Skip windows with <2 points
@@ -943,10 +965,11 @@ class WellAnalysisPipeline:
             # Start from current predictions
             pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
 
-            # Apply overrides in order: Watercut, EDP, Shut-in
-            pred_vec = np.where(mask_wc, 12, pred_vec)
+            # Apply overrides in order: EDP, Shut-in, then Watercut (highest priority)
+            # Watercut MUST be last to ensure it's never overridden
             pred_vec = np.where(mask_edp, 10, pred_vec)
             pred_vec = np.where(mask_shutin, 11, pred_vec)
+            pred_vec = np.where(mask_wc, 12, pred_vec)  # Watercut has highest priority
 
             # Write back into out by aligning indices
             out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
@@ -1238,9 +1261,120 @@ class WellAnalysisPipeline:
                     logger.info(f"Saved notebook-style predictions to stress_test: {pred30_path_stress}")
             except Exception as e2:
                 logger.warning(f"Could not save prediction_results_30menit.csv: {e2}")
+            
+            # Generate 3-hour aggregated results (like notebook)
+            try:
+                self._save_3hour_aggregated_results(final_df)
+            except Exception as e3:
+                logger.warning(f"Could not save 3-hour aggregated results: {e3}")
+                
         except Exception as e:
             logger.error(f"Error saving final failure results: {e}")
 
+    def _save_3hour_aggregated_results(self, final_df: pd.DataFrame) -> None:
+        """Aggregate 30-minute predictions to 3-hour windows and save as result_df_3 jam.csv
+        
+        This matches the notebook output format where each 3-hour window shows the dominant status.
+        """
+        if final_df.empty:
+            logger.warning("No data to aggregate to 3-hour windows")
+            return
+        
+        df = final_df.copy()
+        
+        # Ensure Window_Start_Time is datetime
+        df['Window_Start_Time'] = pd.to_datetime(df['Window_Start_Time'])
+        
+        # Create 3-hour bins (floor to 3-hour intervals)
+        df['3H_Window'] = df['Window_Start_Time'].dt.floor('3H')
+        
+        # Group by 3-hour window and find dominant status
+        def get_dominant_status(group):
+            """Get the dominant status using EXACT notebook logic (cell 28)
+            
+            Logic:
+            1. If Shut-in > 50% of total → Dominant = Shut-in
+            2. Otherwise, exclude Shut-in from calculation:
+               - If non-Running ≥ 50% → pick most frequent non-Running
+               - If tie, use daily problem counter (not implemented yet, use priority)
+               - Otherwise → Running
+            """
+            total = len(group)
+            if total == 0:
+                return 'Unknown'
+            
+            status_counts = group['Status'].value_counts()
+            
+            # Check Shut-in count FIRST (highest frequency priority)
+            shutin_count = status_counts.get('Shut-in', 0)
+            if shutin_count > total / 2:
+                return 'Shut-in'
+            
+            # Special priority: If EDP is dominant among non-Shut-in AND Shut-in is not dominant
+            # This handles the case where EDP + Shut-in both exist but neither is >50%
+            edp_count = status_counts.get('Electrical Downhole Problem', 0)
+            if edp_count > 0 and shutin_count > 0 and shutin_count <= total / 2:
+                # Exclude Shut-in to see if EDP is dominant among non-Shut-in
+                non_shutin_total = total - shutin_count
+                if non_shutin_total > 0 and edp_count >= (non_shutin_total / 2):
+                    return 'Electrical Downhole Problem'
+            
+            # Exclude Shut-in from calculation
+            group_no_shutin = group[group['Status'] != 'Shut-in']
+            total_valid = len(group_no_shutin)
+            
+            if total_valid == 0:
+                return 'Shut-in'  # All Shut-in
+            
+            status_counts_no_shutin = group_no_shutin['Status'].value_counts()
+            running_count = status_counts_no_shutin.get('Running', 0)
+            non_running_count = total_valid - running_count
+            
+            if non_running_count >= (total_valid / 2):
+                # Get most frequent non-Running status
+                status_counts_no_running = status_counts_no_shutin.drop('Running', errors='ignore')
+                
+                if len(status_counts_no_running) == 0:
+                    return 'Running'
+                
+                top_count = status_counts_no_running.max()
+                top_statuses = status_counts_no_running[status_counts_no_running == top_count]
+                
+                if len(top_statuses) == 1:
+                    return top_statuses.index[0]
+                else:
+                    # Tie-breaker: use priority order (simplified, notebook uses daily counter)
+                    priority = ['100% Watercut', 'Electrical Downhole Problem', 
+                               'Start-up Phase', 'Low PI']
+                    for p in priority:
+                        if p in top_statuses.index:
+                            return p
+                    return top_statuses.index[0]
+            else:
+                return 'Running'
+        
+        # Aggregate
+        result_3h = df.groupby('3H_Window').apply(get_dominant_status).reset_index()
+        result_3h.columns = ['Window_Start_Time', 'Dominant Status']
+        
+        # Sort by time
+        result_3h = result_3h.sort_values('Window_Start_Time').reset_index(drop=True)
+        
+        # Save to output directory
+        output_dir = str(self.output_dir)
+        output_file = os.path.join(output_dir, f"result_df_3 jam.csv")
+        result_3h.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
+        logger.info(f"Saved 3-hour aggregated results to: {output_file}")
+        
+        # Also save to project root for easy comparison
+        try:
+            project_root = Path(__file__).resolve().parents[1]
+            root_file = project_root / 'result_df_3 jam.csv'
+            result_3h.to_csv(root_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
+            logger.info(f"Saved 3-hour aggregated results to project root: {root_file}")
+        except Exception as e:
+            logger.warning(f"Could not save 3-hour results to project root: {e}")
+    
     def _open_in_os(self, path: Path) -> None:
         """Try to open a file in the OS default viewer (macOS, Windows, Linux)."""
         try:
