@@ -448,6 +448,12 @@ class WellAnalysisPipeline:
 
             # Export intermediate file just like the notebook
             self._export_notebook_style_csv('SKW Final.csv', self.data)
+            # Also save to well-specific output folder
+            try:
+                well_skw_final = self.output_dir / 'SKW Final.csv'
+                self.data.drop(columns=[c for c in self.data.columns if c.startswith('predicted_')], errors='ignore').to_csv(well_skw_final, index=False)
+            except Exception as e:
+                logger.warning(f'Could not save well-specific SKW Final.csv: {e}')
 
             # 2. Virtual Rate: replicate notebook exactly (dropna before predict, zero rule)
             logger.info("2/4 - Virtual rate handling...")
@@ -474,6 +480,13 @@ class WellAnalysisPipeline:
 
             # Export identical to notebook
             self._export_notebook_style_csv('SKW_final_w_Pd.csv', self.data)
+            # Also save to well-specific output folder (without predicted_ columns)
+            try:
+                well_skw_vr = self.output_dir / 'SKW_final_w_Pd.csv'
+                export_df = self.data.drop(columns=[c for c in self.data.columns if c.startswith('predicted_')], errors='ignore')
+                export_df.to_csv(well_skw_vr, index=False)
+            except Exception as e:
+                logger.warning(f'Could not save well-specific SKW_final_w_Pd.csv: {e}')
 
             # Prepare dataframe exactly like notebook (df1)
             df1 = self.data.copy().reset_index(drop=True)
@@ -500,6 +513,9 @@ class WellAnalysisPipeline:
                 df_all_path = project_root / 'df_all.csv'
                 df_all.to_csv(df_all_path, index=False)
                 logger.info(f"Saved df_all to: {df_all_path}")
+                # Also save to well-specific folder
+                well_df_all = self.output_dir / 'df_all.csv'
+                df_all.to_csv(well_df_all, index=False)
             except Exception as e:
                 logger.warning(f"Could not save df_all.csv: {e}")
 
@@ -572,6 +588,12 @@ class WellAnalysisPipeline:
                 xpred_path = project_root / 'X_predict_30menit.csv'
                 df11.to_csv(xpred_path, index=False)
                 logger.info(f"Saved X_predict_30menit to: {xpred_path}")
+                
+                # Also save to well-specific folder
+                well_slopes = self.output_dir / 'slopes_df_30menit.csv'
+                slopes_df.to_csv(well_slopes, index=False)
+                well_xpred = self.output_dir / 'X_predict_30menit.csv'
+                df11.to_csv(well_xpred, index=False)
             except Exception as e:
                 logger.warning(f"Could not save slope feature CSVs: {e}")
 
@@ -799,87 +821,29 @@ class WellAnalysisPipeline:
             }.get(x, 'Unidentified')
 
         def recommendation_map(x: int) -> str:
+            """Match notebook's recommendation() function exactly.
+            Notebook only returns values for x==0 (' ') and else ('Unidentified').
+            For x in 1-13, it prints to console but returns None (saved as empty/NaN in CSV).
+            """
             x = int(x)
             if x == 0:
                 return " "
-            recs = {
-                1: (
-                    "The Possibility Causes:\n 1. Well productivity less than pump design range\n 2. Restricted pump\n"
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
-                    "2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
-                ),
-                2: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Verify if vibration have increased by 20% from the pump install date\n"
-                    "2. Do shut-in test while the surface check valve is closed, and the pump is running"
-                ),
-                3: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Confirm by a pressure test at the tubing wellhead\n"
-                    "2. Meanwhile, fill up the tubing and pressure up against RCV"
-                ),
-                4: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
-                    "2. Conduct the fluid analysis as a basis for re-design pump"
-                ),
-                5: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Lower the value of frequency using VSD.\n"
-                    "2. Check the pump discharge pressure and compare to previous well data history"
-                ),
-                6: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "Analyze the fluid level and Bottom Hole Pressure (BHP) data!"
-                ),
-                7: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data!\n"
-                    "2. Adjust the tubing well head pressure and bring the pump production rate within design rate"
-                ),
-                8: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Check flow line and separator for evidence of sand, mud, or debris.\n"
-                    "2. Design solid control system for next installation"
-                ),
-                9: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Verify if the valve was deliberately partially closed by Field Service Tech\n"
-                    "2. Contact the Field Service Tech to check out well on location"
-                ),
-                10: (
-                    "Electrical Downhole Problem suspected: "
-                    "1) Verify surface equipment (VSD, step-up transformer, junction box) to confirm failure is downhole. "
-                    "2) Perform a VSD soft shutdown to prevent reverse current surges. "
-                    "3) Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
-                ),
-                11: (
-                    "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
-                ),
-                12: (
-                    "Well producing 100% water — likely water breakthrough or reservoir depletion: "
-                    "Causes: 1) Water coning/channeling from aquifer, 2) Casing/tubing leak allowing water influx, 3) Reservoir pressure depletion. "
-                    "Recommended actions: 1) Verify production test (separator test or sampling), 2) Check GOR trend (near zero indicates water dominance), "
-                    "3) Review well completion to find water source, 4) Consider temporary shut-in or zonal isolation, 5) Evaluate re-perforation or water-shutoff treatment."
-                ),
-                13: (
-                    "Start-up Phase after extended data gap: 1) Monitor equipment closely during ramp-up, "
-                    "2) Ensure surface controls follow the planned start-up procedure, "
-                    "3) Confirm downhole pressures and temperatures stabilize before normal operation."
-                ),
-            }
-            return recs.get(x, " ")
+            # For all other values (1-13), notebook prints but doesn't return
+            # So we return empty string to match CSV output
+            return " "
 
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
+        # Ensure Recommendation is always a string (notebook uses ' ' not NaN)
+        out['Recommendation'] = out['Recommendation'].fillna(' ').astype(str)
         out['Recommendation'] = (
             out['Recommendation']
-            .astype(str)
             .str.replace('\n', ' ', regex=False)
             .str.replace(r'\s+', ' ', regex=True)
             .str.strip()
         )
+        # Replace empty strings with single space to match notebook
+        out.loc[out['Recommendation'] == '', 'Recommendation'] = ' '
 
         # Apply additional rules using vectorized operations
         try:
@@ -975,10 +939,8 @@ class WellAnalysisPipeline:
             out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
             out['Prediction'] = pred_vec
 
-            # Reason for status (human-friendly)
-            reason = np.full(len(merged), '', dtype=object)
-            reason = np.where(mask_shutin, 'Rule: Shut-in (Amps & Frequency ~ 0)', reason)
-            # For model-based Low PI, keep empty here; we will set based on mapped Status below
+            # Date column (extracted from Window_Start_Time, matching notebook)
+            # Will be added after status mapping
 
             # Remap Status/Recommendation after overrides
             out['Status'] = out['Prediction'].apply(status_map)
@@ -994,17 +956,8 @@ class WellAnalysisPipeline:
             # Keep all statuses from template: Low PI, Shut-in, 100% Watercut, EDP, Running, etc.
             # No restriction - allow all classes as per template
 
-            # Finalize Reason column after restriction
-            out['Reason'] = ''
-            # If Shut-in, keep rule-based reason
-            shutin_idx = out['Status'] == 'Shut-in'
-            if shutin_idx.any():
-                # align by index after merge
-                out.loc[shutin_idx, 'Reason'] = 'Rule: Shut-in (Amps & Frequency ~ 0)'
-            # If Low PI, mark as model-based
-            lowpi_idx = out['Status'] == 'Low PI'
-            if lowpi_idx.any():
-                out.loc[lowpi_idx, 'Reason'] = 'Model: Low PI'
+            # Add Date column (matching notebook: date portion of Window_Start_Time)
+            out['Date'] = pd.to_datetime(out['Window_Start_Time']).dt.date
 
             # --- Start-up Phase Detection - EXACT sesuai notebook ---
             # Notebook deteksi gap dari prediction_results_df (windowed data), bukan raw data
@@ -1043,7 +996,7 @@ class WellAnalysisPipeline:
                             if out.loc[j, 'Status'] != 'Shut-in':
                                 out.at[j, 'Prediction'] = 13
                                 out.at[j, 'Status'] = 'Start-up Phase'
-                                out.at[j, 'Reason'] = 'Rule: Start-up Phase after gap'
+                                # Date column already added above
                     else:
                         # tidak ada Shut-in, ubah EDP 24 jam ke depan menjadi Start-up Phase
                         # Notebook lines 984-993
@@ -1057,7 +1010,7 @@ class WellAnalysisPipeline:
                         for j in edp_indices:
                             out.at[j, 'Prediction'] = 13
                             out.at[j, 'Status'] = 'Start-up Phase'
-                            out.at[j, 'Reason'] = 'Rule: Start-up Phase (EDP after gap)'
+                            # Date column already added above
 
         except Exception as e:
             logger.warning(f"Failed applying additional status rules: {e}")
@@ -1065,11 +1018,11 @@ class WellAnalysisPipeline:
         return out
 
     def _load_wc_data(self) -> None:
-        """Load daily Watercut data from prod_data.csv located at project root.
+        """Load daily Watercut data from Test Web/Data Produksi/{well_name}.csv.
         Parses 'Date' to datetime (normalized to date) and 'WC' to numeric percent.
         """
         project_root = Path(__file__).resolve().parents[1]
-        csv_path = project_root / 'prod_data.csv'
+        csv_path = project_root / 'Test Web' / 'Data Produksi' / f'{self.well_name}.csv'
         if not csv_path.exists():
             raise FileNotFoundError(f"Watercut data file not found: {csv_path}")
 
@@ -1216,10 +1169,9 @@ class WellAnalysisPipeline:
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, f"{self.well_name}_failure_prediction_30min.csv")
         try:
-            # Ensure ordering of columns (include Reason if available)
-            base_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation']
-            cols = base_cols + (['Reason'] if 'Reason' in final_df.columns else [])
-            df_to_save = final_df[cols].copy() if all(c in final_df.columns for c in cols) else final_df.copy()
+            # Ensure ordering of columns (include Date column matching notebook)
+            base_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
+            df_to_save = final_df[base_cols].copy() if all(c in final_df.columns for c in base_cols) else final_df.copy()
             if 'Recommendation' in df_to_save.columns:
                 df_to_save['Recommendation'] = (
                     df_to_save['Recommendation']

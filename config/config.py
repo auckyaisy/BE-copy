@@ -34,14 +34,13 @@ FEATURE_COLUMNS = {
         'Vibration (gravit) (Raw)'
     ],
     'virtual_rate': [
-        # Model VR expect 4 features: A, IP, IT, MT
-        # Notebook line 180: df.drop(df.columns[[0,1,2,6]], axis=1) gives 6 cols
-        # But model trained with 4 cols (lines 185-188 commented out show rename to A, IP, IT, MT)
-        # So model uses: Amps, Intake Pressure, Intake Temp, Motor Temp
+        # Notebook keeps six numeric columns after dropping [0,1,2,6]
         'Average Amps (A) (Raw)',
+        'Drive Frequency (Hz) (Raw)',
         'Intake Pressure (psi) (Raw)',
         'Intake Temperature (F) (Raw)',
-        'Motor Temperature (F) (Raw)'
+        'Motor Temperature (F) (Raw)',
+        'Vibration (gravit) (Raw)'
     ],
     'failure_prediction': [
         'Average Amps (A) (Raw)',
