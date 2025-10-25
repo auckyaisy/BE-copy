@@ -828,9 +828,74 @@ class WellAnalysisPipeline:
             x = int(x)
             if x == 0:
                 return " "
-            # For all other values (1-13), notebook prints but doesn't return
-            # So we return empty string to match CSV output
-            return " "
+            recs = {
+                1: (
+                    "The Possibility Causes:\n 1. Well productivity less than pump design range\n 2. Restricted pump\n"
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
+                    "2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
+                ),
+                2: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Verify if vibration have increased by 20% from the pump install date\n"
+                    "2. Do shut-in test while the surface check valve is closed, and the pump is running"
+                ),
+                3: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Confirm by a pressure test at the tubing wellhead\n"
+                    "2. Meanwhile, fill up the tubing and pressure up against RCV"
+                ),
+                4: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
+                    "2. Conduct the fluid analysis as a basis for re-design pump"
+                ),
+                5: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Lower the value of frequency using VSD.\n"
+                    "2. Check the pump discharge pressure and compare to previous well data history"
+                ),
+                6: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "Analyze the fluid level and Bottom Hole Pressure (BHP) data!"
+                ),
+                7: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data!\n"
+                    "2. Adjust the tubing well head pressure and bring the pump production rate within design rate"
+                ),
+                8: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Check flow line and separator for evidence of sand, mud, or debris.\n"
+                    "2. Design solid control system for next installation"
+                ),
+                9: (
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Verify if the valve was deliberately partially closed by Field Service Tech\n"
+                    "2. Contact the Field Service Tech to check out well on location"
+                ),
+                10: (
+                    "Electrical Downhole Problem suspected: "
+                    "1) Verify surface equipment (VSD, step-up transformer, junction box) to confirm failure is downhole. "
+                    "2) Perform a VSD soft shutdown to prevent reverse current surges. "
+                    "3) Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
+                ),
+                11: (
+                    "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
+                ),
+                12: (
+                    "Well producing 100% water — likely water breakthrough or reservoir depletion: "
+                    "Causes: 1) Water coning/channeling from aquifer, 2) Casing/tubing leak allowing water influx, 3) Reservoir pressure depletion. "
+                    "Recommended actions: 1) Verify production test (separator test or sampling), 2) Check GOR trend (near zero indicates water dominance), "
+                    "3) Review well completion to find water source, 4) Consider temporary shut-in or zonal isolation, 5) Evaluate re-perforation or water-shutoff treatment."
+                ),
+                13: (
+                    "Start-up Phase after extended data gap: 1) Monitor equipment closely during ramp-up, "
+                    "2) Ensure surface controls follow the planned start-up procedure, "
+                    "3) Confirm downhole pressures and temperatures stabilize before normal operation."
+                ),
+            }
+            return recs.get(x, " ")
 
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
