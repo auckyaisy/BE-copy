@@ -31,6 +31,17 @@ def setup_logging(log_file: Optional[Path] = None, level: int = logging.INFO) ->
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=log_handlers
     )
+    root_logger = logging.getLogger()
+    for h in root_logger.handlers:
+        h.setLevel(level)
+    noisy = [
+        'matplotlib', 'matplotlib.font_manager', 'PIL', 'PIL.PngImagePlugin', 'fontTools',
+        'urllib3', 'chardet', 'asyncio', 'fsspec', 'numexpr', 'parso', 'jedi'
+    ]
+    for name in noisy:
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.WARNING)
+        lg.propagate = False
 
 
 def load_config(config_file: Union[str, Path]) -> Dict[str, Any]:

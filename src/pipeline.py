@@ -9,6 +9,7 @@ from joblib import load
 from typing import Dict, Tuple, Optional, Union, List
 import matplotlib.pyplot as plt
 import seaborn as sns
+from collections import Counter
 
 from config.config import (
     MODEL_PATHS, FEATURE_COLUMNS, TARGET_COLUMNS,
@@ -16,8 +17,6 @@ from config.config import (
 )
 from .utils import calculate_well_slopes
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class WellAnalysisPipeline:
@@ -502,7 +501,7 @@ class WellAnalysisPipeline:
             df_all['Reading Time'] = pd.to_datetime(df_all['Reading Time'], errors='coerce')
             df_all = (
                 df_all.set_index('Reading Time')
-                      .resample('30T', origin='epoch')
+                      .resample('30min', origin='epoch')
                       .mean(numeric_only=True)
                       .reset_index()
             )
@@ -929,7 +928,11 @@ class WellAnalysisPipeline:
                 merged['Date'] = merged['Window_Start_Time'].dt.normalize()
                 wc_map = self.df_wc.set_index('Date')['WC'].to_dict()
                 merged['WC_val'] = merged['Date'].map(wc_map)
-                mask_wc = (merged['WC_val'].fillna(0) >= 100.0)
+                # WC=100% check with tolerance, matching Untitled-1 logic
+                try:
+                    mask_wc = np.isclose(merged['WC_val'].astype(float), 100.0, atol=1e-6)
+                except Exception:
+                    mask_wc = pd.Series(False, index=merged.index)
 
             # Shortcuts for columns (fillna with 0 for comparisons)
             amps = merged.get('Average Amps (A) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
@@ -988,8 +991,17 @@ class WellAnalysisPipeline:
             )
             mask_shutin = amps_zero & freq_zero & (other_zero | any_variation)
 
-            # EDP override: if Amps and Freq are zero AND DP/IP/IT/MT/V are also zero (no variation)
-            mask_edp = amps_zero & freq_zero & ~any_variation
+            # EDP override: if Amps and Freq are zero AND DP/IP/IT/MT/V and Rate are also zero (no variation)
+            mask_edp = (
+                amps_zero & freq_zero &
+                np.isclose(rate, 0.0, atol=TOL) &
+                np.isclose(dp_s, 0.0, atol=TOL) &
+                np.isclose(it_s, 0.0, atol=TOL) &
+                np.isclose(mt_s, 0.0, atol=TOL) &
+                np.isclose(v_s, 0.0, atol=TOL) &
+                np.isclose(r_s, 0.0, atol=TOL) &
+                (~any_variation)
+            )
 
             # Start from current predictions
             pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
@@ -1153,75 +1165,48 @@ class WellAnalysisPipeline:
                 # Create output file with absolute path in home directory
                 output_file = os.path.join(output_dir, f"{self.well_name}_{model_name}_predictions.csv")
                 logger.info(f"Saving {model_name} predictions to: {output_file}")
-                
-                # Create a base DataFrame for results
-                result_data = {}
-                
-                # Add timestamp if available
-                if 'Reading Time' in self.data.columns:
-                    result_data['timestamp'] = self.data['Reading Time']
-                
-                # Handle 1D and 2D predictions
-                if hasattr(predictions, 'ndim') and predictions.ndim == 1:
-                    # For 1D arrays, use a single prediction column
-                    result_data['prediction'] = predictions
-                elif hasattr(predictions, 'ndim'):
-                    # For 2D arrays, create a column for each prediction dimension
-                    for i in range(predictions.shape[1]):
-                        result_data[f'prediction_{i}'] = predictions[:, i]
-                else:
-                    # Fallback: wrap in a column
-                    result_data['prediction'] = np.asarray(predictions)
-                
-                # Create and save the DataFrame
-                result_df = pd.DataFrame(result_data)
 
-                # If timestamp exists but length mismatches predictions, drop timestamp to avoid errors
-                if 'timestamp' in result_df.columns and len(result_df['timestamp']) != len(result_df.drop(columns=['timestamp'])):
-                    logger.warning("Timestamp length does not match predictions; dropping timestamp from save")
-                    result_df = result_df.drop(columns=['timestamp'])
+                # Normalize predictions to numpy array
+                pred_arr = np.asarray(predictions)
+
+                # Build predictions-only DataFrame first
+                if pred_arr.ndim == 1:
+                    result_df = pd.DataFrame({'prediction': pred_arr})
+                elif pred_arr.ndim == 2:
+                    result_df = pd.DataFrame({f'prediction_{i}': pred_arr[:, i] for i in range(pred_arr.shape[1])})
+                else:
+                    result_df = pd.DataFrame({'prediction': pred_arr.reshape(-1)})
+
+                # Optionally add timestamp if it matches row count
+                if 'Reading Time' in self.data.columns:
+                    ts = self.data['Reading Time']
+                    if len(ts) == len(result_df):
+                        result_df.insert(0, 'timestamp', ts)
+                    else:
+                        logger.warning("Timestamp length does not match predictions; saving without timestamp")
 
                 # Handle empty predictions gracefully
                 if result_df.shape[0] == 0:
                     logger.warning(f"No predictions to save for {model_name}; skipping file write")
                     continue
-                
-                # Convert timestamp to string if it's a datetime
-                if 'timestamp' in result_df.columns and hasattr(result_df['timestamp'].dtype, 'tz'):
-                    result_df['timestamp'] = result_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
-                
-                # Save to CSV with better formatting
+
+                # Save to CSV
                 result_df.to_csv(
                     output_file,
                     index=False,
-                    float_format='%.4f',  # Format floating point numbers
-                    date_format='%Y-%m-%d %H:%M:%S'  # Format timestamps
+                    float_format='%.4f'
                 )
-                
-                # Verify file was created
+
                 if os.path.exists(output_file):
                     file_size = os.path.getsize(output_file)
                     logger.info(f"Successfully saved {model_name} predictions to {output_file} (Size: {file_size} bytes)")
-                    
-                    # Print file contents for debugging
-                    try:
-                        with open(output_file, 'r') as f:
-                            content = f.read(500)  # Read first 500 chars
-                            logger.debug(f"File contents of {output_file}:\n{content}...")
-                    except Exception as e:
-                        logger.warning(f"Could not read output file for debugging: {str(e)}")
-                        
+
             except Exception as e:
                 logger.error(f"Error saving {model_name} results: {str(e)}", exc_info=True)
-                # In case of error, try a simpler save approach
+                # Simpler fallback: predictions only
                 try:
-                    # Create a simple DataFrame with just the predictions
-                    result_data = {'prediction': predictions}
-                    if 'Reading Time' in self.data.columns:
-                        result_data['timestamp'] = self.data['Reading Time']
-                    
-                    pd.DataFrame(result_data).to_csv(output_file, index=False)
-                    logger.warning(f"Used fallback method to save {model_name} results")
+                    pd.DataFrame({'prediction': np.asarray(predictions).reshape(-1)}).to_csv(output_file, index=False)
+                    logger.warning(f"Used fallback method to save {model_name} results (predictions only)")
                 except Exception as inner_e:
                     logger.error(f"Failed to save results with fallback method: {str(inner_e)}")
 
@@ -1303,7 +1288,7 @@ class WellAnalysisPipeline:
         df['Window_Start_Time'] = pd.to_datetime(df['Window_Start_Time'])
         
         # Create 3-hour bins (floor to 3-hour intervals)
-        df['3H_Window'] = df['Window_Start_Time'].dt.floor('3H')
+        df['3H_Window'] = df['Window_Start_Time'].dt.floor('3h')
         
         # Group by 3-hour window and find dominant status
         def get_dominant_status(group):
@@ -1371,23 +1356,34 @@ class WellAnalysisPipeline:
                 return 'Running'
         
         # Aggregate
-        result_3h = df.groupby('3H_Window').apply(get_dominant_status).reset_index()
+        result_3h = df.groupby('3H_Window', group_keys=False).apply(get_dominant_status).reset_index()
         result_3h.columns = ['Window_Start_Time', 'Dominant Status']
         
         # Sort by time
         result_3h = result_3h.sort_values('Window_Start_Time').reset_index(drop=True)
+
+        # Match notebook timestamp format: M/D/YYYY HH:MM (no leading zeros, no seconds)
+        # Use platform-compatible strftime; on Unix, %-m/%-d drops leading zeros.
+        try:
+            result_3h['Window_Start_Time'] = pd.to_datetime(result_3h['Window_Start_Time'])
+            formatted = result_3h['Window_Start_Time'].dt.strftime('%-m/%-d/%Y %-H:%M')
+        except Exception:
+            formatted = result_3h['Window_Start_Time'].dt.strftime('%m/%d/%Y %H:%M')
+            formatted = formatted.str.lstrip('0').str.replace('/0', '/', regex=False)
+            formatted = formatted.str.replace(' 0([0-9]):', r' \1:', regex=True)
+        result_3h['Window_Start_Time'] = formatted
         
         # Save to output directory
         output_dir = str(self.output_dir)
         output_file = os.path.join(output_dir, f"result_df_3 jam.csv")
-        result_3h.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
+        result_3h.to_csv(output_file, index=False)
         logger.info(f"Saved 3-hour aggregated results to: {output_file}")
         
         # Also save to project root for easy comparison
         try:
             project_root = Path(__file__).resolve().parents[1]
             root_file = project_root / 'result_df_3 jam.csv'
-            result_3h.to_csv(root_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
+            result_3h.to_csv(root_file, index=False)
             logger.info(f"Saved 3-hour aggregated results to project root: {root_file}")
         except Exception as e:
             logger.warning(f"Could not save 3-hour results to project root: {e}")
