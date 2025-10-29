@@ -40,6 +40,9 @@ class WellAnalysisPipeline:
         # Resolve and create output directory
         self.output_dir: Path = Path(output_dir) if output_dir is not None else OUTPUT_DIR
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Optional paths tracked for flexible Watercut loading
+        self.prod_data_path: Optional[Path] = None
+        self.input_file_path: Optional[Path] = None
     
     def load_data(self, file_path: Optional[Path] = None) -> pd.DataFrame:
         """
@@ -59,6 +62,10 @@ class WellAnalysisPipeline:
         
         logger.info(f"Loading data from {file_path}")
         self.data = pd.read_csv(file_path)
+        try:
+            self.input_file_path = Path(file_path).resolve()
+        except Exception:
+            self.input_file_path = Path(file_path)
         return self.data
     
     def preprocess_data(self, target_model: str = 'discharge_pressure') -> pd.DataFrame:
@@ -527,51 +534,72 @@ class WellAnalysisPipeline:
             if df_for_slopes.empty:
                 slopes_df = pd.DataFrame(columns=['Window_Start_Time','A','IP','DP','IT','MT','V','R'])
             else:
-                time_interval = pd.Timedelta(minutes=30)
-                start_time = df_for_slopes['Reading Time'].iloc[0].floor('30min')
-                end_time = df_for_slopes['Reading Time'].iloc[-1].ceil('30min')
-                time_windows = pd.date_range(start=start_time, end=end_time, freq='30min')
-                numerical_cols = df_for_slopes.select_dtypes(include=np.number).columns.tolist()
+                # Vectorized slope computation per 30-min window using OLS formula
+                # Define required raw columns for slopes (match notebook mapping)
+                raw_cols_map = [
+                    ('Average Amps (A) (Raw)', 'A'),
+                    ('Intake Pressure (psi) (Raw)', 'IP'),
+                    ('Discharge Pressure (psi) (Raw)', 'DP'),
+                    ('Intake Temperature (F) (Raw)', 'IT'),
+                    ('Motor Temperature (F) (Raw)', 'MT'),
+                    ('Vibration (gravit) (Raw)', 'V'),
+                    ('Virtual Rate (BFPD) (Raw)', 'R'),
+                ]
+                present_raw = [c for c, _ in raw_cols_map if c in df_for_slopes.columns]
 
-                from scipy.stats import linregress
+                df_s = df_for_slopes[['Reading Time'] + present_raw].copy()
+                df_s['Window_Start_Time'] = df_s['Reading Time'].dt.floor('30min')
 
-                slopes_list = []
-                for window_start in time_windows:
-                    window_end = window_start + time_interval
-                    window_df = df_for_slopes[(df_for_slopes['Reading Time'] >= window_start) & (df_for_slopes['Reading Time'] < window_end)]
-                    if len(window_df) < 2:
-                        continue
-
-                    window_slopes = {}
-                    for col in numerical_cols:
-                        temp_df = window_df[['Reading Time', col]].dropna()
-                        if len(temp_df) > 1:
-                            temp_time_diff = (temp_df['Reading Time'] - window_start).dt.total_seconds().values
-                            slope, _, _, _, _ = linregress(temp_time_diff, temp_df[col])
-                            window_slopes[f"{col}_slope"] = slope
-                        else:
-                            window_slopes[f"{col}_slope"] = np.nan
-                    window_slopes['Window_Start_Time'] = window_start
-                    slopes_list.append(window_slopes)
-
-                slopes_raw = pd.DataFrame(slopes_list)
-                if slopes_raw.empty:
+                # Only keep windows with at least 2 rows (match loop behavior that skips <2)
+                win_counts = df_s.groupby('Window_Start_Time')['Reading Time'].size()
+                valid_windows = set(win_counts[win_counts >= 2].index)
+                if len(valid_windows) == 0:
                     slopes_df = pd.DataFrame(columns=['Window_Start_Time','A','IP','DP','IT','MT','V','R'])
                 else:
-                    slopes_raw = slopes_raw.set_index('Window_Start_Time').reset_index()
-                    # Expected order of slope columns as produced by notebook
-                    slope_cols_mapping = [
-                        ('Average Amps (A) (Raw)_slope', 'A'),
-                        ('Intake Pressure (psi) (Raw)_slope', 'IP'),
-                        ('Discharge Pressure (psi) (Raw)_slope', 'DP'),
-                        ('Intake Temperature (F) (Raw)_slope', 'IT'),
-                        ('Motor Temperature (F) (Raw)_slope', 'MT'),
-                        ('Vibration (gravit) (Raw)_slope', 'V'),
-                        ('Virtual Rate (BFPD) (Raw)_slope', 'R'),
-                    ]
-                    slopes_df = slopes_raw[['Window_Start_Time']].copy()
-                    for src, dst in slope_cols_mapping:
-                        slopes_df[dst] = slopes_raw.get(src, pd.Series(np.nan, index=slopes_raw.index))
+                    df_s = df_s[df_s['Window_Start_Time'].isin(valid_windows)]
+                    df_s['tsec'] = (df_s['Reading Time'] - df_s['Window_Start_Time']).dt.total_seconds()
+
+                    # Long form for vectorized aggregation
+                    long = df_s.melt(
+                        id_vars=['Window_Start_Time', 'tsec'],
+                        value_vars=present_raw,
+                        var_name='metric',
+                        value_name='value'
+                    ).dropna(subset=['value'])
+
+                    if long.empty:
+                        slopes_df = pd.DataFrame(columns=['Window_Start_Time','A','IP','DP','IT','MT','V','R'])
+                    else:
+                        long['ty'] = long['tsec'] * long['value']
+                        long['t2'] = long['tsec'] * long['tsec']
+                        agg = long.groupby(['Window_Start_Time', 'metric']).agg(
+                            n=('value', 'count'),
+                            sum_t=('tsec', 'sum'),
+                            sum_y=('value', 'sum'),
+                            sum_ty=('ty', 'sum'),
+                            sum_t2=('t2', 'sum')
+                        ).reset_index()
+
+                        n = agg['n'].to_numpy(dtype=float)
+                        sum_t = agg['sum_t'].to_numpy(dtype=float)
+                        sum_y = agg['sum_y'].to_numpy(dtype=float)
+                        sum_ty = agg['sum_ty'].to_numpy(dtype=float)
+                        sum_t2 = agg['sum_t2'].to_numpy(dtype=float)
+
+                        den = sum_t2 - (sum_t * sum_t) / n
+                        with np.errstate(divide='ignore', invalid='ignore'):
+                            slope_vals = (sum_ty - (sum_t * sum_y) / n) / den
+                        slope_vals[(n < 2) | ~np.isfinite(slope_vals)] = np.nan
+                        agg['slope'] = slope_vals
+
+                        pivot = agg.pivot(index='Window_Start_Time', columns='metric', values='slope').reset_index()
+                        # Build final slopes_df with expected columns
+                        slopes_df = pivot[['Window_Start_Time']].copy()
+                        for raw_name, short in raw_cols_map:
+                            if raw_name in pivot.columns:
+                                slopes_df[short] = pivot[raw_name]
+                            else:
+                                slopes_df[short] = np.nan
 
             # Prepare df11 features
             expected_cols = ['A', 'IP', 'DP', 'IT', 'MT', 'V', 'R']
@@ -931,8 +959,13 @@ class WellAnalysisPipeline:
                 # WC=100% check with tolerance, matching Untitled-1 logic
                 try:
                     mask_wc = np.isclose(merged['WC_val'].astype(float), 100.0, atol=1e-6)
+                    wc_count = mask_wc.sum()
+                    if wc_count > 0:
+                        logger.info(f"Watercut=100% detected for {wc_count} windows")
                 except Exception:
                     mask_wc = pd.Series(False, index=merged.index)
+            else:
+                logger.warning("Watercut data not loaded or empty - 100% Watercut detection disabled")
 
             # Shortcuts for columns (fillna with 0 for comparisons)
             amps = merged.get('Average Amps (A) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
@@ -1006,11 +1039,19 @@ class WellAnalysisPipeline:
             # Start from current predictions
             pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
 
-            # Apply overrides in order: EDP, Shut-in, then Watercut (highest priority)
-            # Watercut MUST be last to ensure it's never overridden
-            pred_vec = np.where(mask_edp, 10, pred_vec)
+            # Apply overrides in template order with overwrites (like pandas .loc[]):
+            # 1) Watercut=100% → set 12
+            # 2) Shut-in       → set 11 (overwrites Watercut if both true)
+            # 3) EDP           → set 10 (final overwrite per template order)
+            pred_vec = np.where(mask_wc, 12, pred_vec)
             pred_vec = np.where(mask_shutin, 11, pred_vec)
-            pred_vec = np.where(mask_wc, 12, pred_vec)  # Watercut has highest priority
+            pred_vec = np.where(mask_edp, 10, pred_vec)
+
+            # Log counts (raw mask sums)
+            wc_count_override = int(getattr(mask_wc, 'sum', lambda: np.sum(mask_wc))()) if hasattr(mask_wc, 'sum') else int(np.sum(mask_wc))
+            shutin_count = int(getattr(mask_shutin, 'sum', lambda: np.sum(mask_shutin))()) if hasattr(mask_shutin, 'sum') else int(np.sum(mask_shutin))
+            edp_count = int(getattr(mask_edp, 'sum', lambda: np.sum(mask_edp))()) if hasattr(mask_edp, 'sum') else int(np.sum(mask_edp))
+            logger.info(f"Override counts (masks) - Watercut=100%: {wc_count_override}, Shut-in: {shutin_count}, EDP: {edp_count}")
 
             # Write back into out by aligning indices
             out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
@@ -1095,20 +1136,81 @@ class WellAnalysisPipeline:
         return out
 
     def _load_wc_data(self) -> None:
-        """Load daily Watercut data from Test Web/Data Produksi/{well_name}.csv.
-        Parses 'Date' to datetime (normalized to date) and 'WC' to numeric percent.
+        """Load daily Watercut (production) data flexibly.
+        Priority:
+        1) self.prod_data_path (file) if provided
+        2) self.prod_data_path (dir)/{well}.csv if dir provided
+        3) Sibling of input: replace 'Data Sensor' with 'Data Produksi' and use {well}.csv
+        4) Project 'Test Web/Data Produksi/{well}.csv'
+        5) Project root 'prod_data.csv' (optionally filter by Well column if present)
         """
         project_root = Path(__file__).resolve().parents[1]
-        csv_path = project_root / 'Test Web' / 'Data Produksi' / f'{self.well_name}.csv'
-        if not csv_path.exists():
-            raise FileNotFoundError(f"Watercut data file not found: {csv_path}")
+        attempted = []
 
-        df = pd.read_csv(csv_path)
-        if 'Date' not in df.columns or 'WC' not in df.columns:
-            raise ValueError("Watercut file must contain 'Date' and 'WC' columns")
+        # Build candidate paths
+        candidates: List[Path] = []
+
+        # 1) Explicit path from user (file or directory)
+        if getattr(self, 'prod_data_path', None):
+            p = Path(self.prod_data_path)
+            if p.suffix.lower() == '.csv':
+                candidates.append(p)
+            else:
+                candidates.append(p / f'{self.well_name}.csv')
+
+        # 2) Sibling of input file under 'Data Produksi'
+        if getattr(self, 'input_file_path', None):
+            try:
+                inp = Path(self.input_file_path)
+                # Try to locate repo root by finding 'Test Web' part
+                parts = list(inp.parts)
+                if 'Test Web' in parts:
+                    idx = parts.index('Test Web')
+                    repo_root = Path(*parts[:idx+1])
+                else:
+                    repo_root = project_root
+                candidates.append(repo_root / 'Data Produksi' / f'{self.well_name}.csv')
+                candidates.append(repo_root / 'Hasil Bacaan Notebook' / self.well_name / 'prod_data.csv')
+            except Exception:
+                pass
+
+        # 3) Project standard location
+        candidates.append(project_root / 'Test Web' / 'Data Produksi' / f'{self.well_name}.csv')
+        # 4) Project root prod_data.csv
+        candidates.append(project_root / 'prod_data.csv')
+
+        csv_path_used: Optional[Path] = None
+        df = None
+        for cand in candidates:
+            attempted.append(str(cand))
+            try:
+                if cand.exists():
+                    df_try = pd.read_csv(cand)
+                    # Validate minimal columns
+                    if {'Date', 'WC'}.issubset(df_try.columns):
+                        df = df_try
+                        csv_path_used = cand
+                        break
+                    # Try wide format: per-well columns
+                    if 'Date' in df_try.columns and self.well_name in df_try.columns:
+                        df = df_try.rename(columns={self.well_name: 'WC'})[['Date', 'WC']]
+                        csv_path_used = cand
+                        break
+                    # Try long format with 'Well' column
+                    if {'Date', 'Well', 'WC'}.issubset(df_try.columns):
+                        df = df_try[df_try['Well'] == self.well_name][['Date', 'WC']]
+                        csv_path_used = cand
+                        break
+            except Exception:
+                continue
+
+        if df is None:
+            raise FileNotFoundError(
+                "Watercut data not found. Tried:\n - " + "\n - ".join(attempted)
+            )
 
         # Parse dates with various formats, then normalize to date
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=False, infer_datetime_format=True)
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce', dayfirst=False)
         df['Date'] = df['Date'].dt.normalize()
 
         # Clean WC strings like '100.00\xa0' or with commas/percent signs
@@ -1119,7 +1221,6 @@ class WellAnalysisPipeline:
                 return float(x)
             s = str(x)
             s = s.replace(',', '')
-            # remove non-digit/dot characters
             s = ''.join(ch for ch in s if (ch.isdigit() or ch == '.' or ch == '-'))
             try:
                 return float(s) if s not in ('', '-', '.') else np.nan
@@ -1127,9 +1228,8 @@ class WellAnalysisPipeline:
                 return np.nan
 
         df['WC'] = df['WC'].apply(to_num)
-        # keep only Date and WC
         self.df_wc = df[['Date', 'WC']].dropna(subset=['Date']).reset_index(drop=True)
-        logger.info(f"Loaded Watercut data with {len(self.df_wc)} rows from {csv_path}")
+        logger.info(f"Loaded Watercut data with {len(self.df_wc)} rows from {csv_path_used}")
 
     def _export_notebook_style_csv(self, filename: str, dataframe: pd.DataFrame) -> None:
         """Replicate notebook CSV exports while stripping internal helper columns."""
@@ -1233,7 +1333,7 @@ class WellAnalysisPipeline:
             df_to_save.to_csv(output_file, index=False, date_format='%Y-%m-%d %H:%M:%S')
             logger.info(f"Saved final failure results to: {output_file}")
 
-            # Also save notebook-style prediction_results_30menit.csv at project root and stress_test
+            # Also save notebook-style prediction_results_30menit.csv at project root, well output, and stress_test
             try:
                 project_root = Path(__file__).resolve().parents[1]
                 df_nb = df_to_save.copy()
@@ -1255,6 +1355,14 @@ class WellAnalysisPipeline:
                 df_nb.to_csv(pred30_path, index=False, date_format='%Y-%m-%d %H:%M:%S')
                 logger.info(f"Saved notebook-style 30-minute predictions to: {pred30_path}")
 
+                # Write to well output directory for comparator
+                try:
+                    pred30_out = Path(output_dir) / 'prediction_results_30menit.csv'
+                    df_nb.to_csv(pred30_out, index=False, date_format='%Y-%m-%d %H:%M:%S')
+                    logger.info(f"Saved notebook-style predictions to well output: {pred30_out}")
+                except Exception as e_out:
+                    logger.warning(f"Could not save prediction_results_30menit.csv to well output: {e_out}")
+
                 # If stress_test directory exists, also write there for easy diffing
                 stress_dir = project_root / 'stress_test'
                 if stress_dir.exists():
@@ -1275,111 +1383,104 @@ class WellAnalysisPipeline:
 
     def _save_3hour_aggregated_results(self, final_df: pd.DataFrame) -> None:
         """Aggregate 30-minute predictions to 3-hour windows and save as result_df_3 jam.csv
-        
-        This matches the notebook output format where each 3-hour window shows the dominant status.
+        using the exact notebook majority and tie-break rules, leveraging daily problem counts.
         """
         if final_df.empty:
             logger.warning("No data to aggregate to 3-hour windows")
             return
-        
+
+        # Prepare dataframe
         df = final_df.copy()
-        
-        # Ensure Window_Start_Time is datetime
         df['Window_Start_Time'] = pd.to_datetime(df['Window_Start_Time'])
-        
-        # Create 3-hour bins (floor to 3-hour intervals)
-        df['3H_Window'] = df['Window_Start_Time'].dt.floor('3h')
-        
-        # Group by 3-hour window and find dominant status
-        def get_dominant_status(group):
-            """Get the dominant status using EXACT notebook logic (cell 28)
-            
-            Logic:
-            1. If Shut-in > 50% of total → Dominant = Shut-in
-            2. Otherwise, exclude Shut-in from calculation:
-               - If non-Running ≥ 50% → pick most frequent non-Running
-               - If tie, use daily problem counter (not implemented yet, use priority)
-               - Otherwise → Running
-            """
+        df = df.sort_values('Window_Start_Time').reset_index(drop=True)
+
+        # Daily non-Running problem counts (exclude Running and Shut-in)
+        df_idx = df.set_index('Window_Start_Time')
+        df_idx['Date'] = df_idx.index.date
+        daily_problem_counts_dict = {}
+        for date, group in df_idx.groupby('Date'):
+            non_running = group[(group['Status'] != 'Running') & (group['Status'] != 'Shut-in')]
+            daily_problem_counts_dict[date] = Counter(non_running['Status'])
+
+        # Resample per 3 hours and compute dominant status
+        grouped = df_idx.resample('3H')
+        results = []
+        for timestamp, group in grouped:
             total = len(group)
             if total == 0:
-                return 'Unknown'
-            
-            status_counts = group['Status'].value_counts()
-            
-            # Check Shut-in count FIRST (highest frequency priority)
-            shutin_count = status_counts.get('Shut-in', 0)
-            if shutin_count > total / 2:
-                return 'Shut-in'
-            
-            # Special priority: If EDP is dominant among non-Shut-in AND Shut-in is not dominant
-            # This handles the case where EDP + Shut-in both exist but neither is >50%
-            edp_count = status_counts.get('Electrical Downhole Problem', 0)
-            if edp_count > 0 and shutin_count > 0 and shutin_count <= total / 2:
-                # Exclude Shut-in to see if EDP is dominant among non-Shut-in
-                non_shutin_total = total - shutin_count
-                if non_shutin_total > 0 and edp_count >= (non_shutin_total / 2):
-                    return 'Electrical Downhole Problem'
-            
-            # Exclude Shut-in from calculation
-            group_no_shutin = group[group['Status'] != 'Shut-in']
-            total_valid = len(group_no_shutin)
-            
-            if total_valid == 0:
-                return 'Shut-in'  # All Shut-in
-            
-            status_counts_no_shutin = group_no_shutin['Status'].value_counts()
-            running_count = status_counts_no_shutin.get('Running', 0)
-            non_running_count = total_valid - running_count
-            
-            if non_running_count >= (total_valid / 2):
-                # Get most frequent non-Running status
-                status_counts_no_running = status_counts_no_shutin.drop('Running', errors='ignore')
-                
-                if len(status_counts_no_running) == 0:
-                    return 'Running'
-                
-                top_count = status_counts_no_running.max()
-                top_statuses = status_counts_no_running[status_counts_no_running == top_count]
-                
-                if len(top_statuses) == 1:
-                    return top_statuses.index[0]
-                else:
-                    # Tie-breaker: use priority order (simplified, notebook uses daily counter)
-                    priority = ['100% Watercut', 'Electrical Downhole Problem', 
-                               'Start-up Phase', 'Low PI']
-                    for p in priority:
-                        if p in top_statuses.index:
-                            return p
-                    return top_statuses.index[0]
-            else:
-                return 'Running'
-        
-        # Aggregate
-        result_3h = df.groupby('3H_Window', group_keys=False).apply(get_dominant_status).reset_index()
-        result_3h.columns = ['Window_Start_Time', 'Dominant Status']
-        
-        # Sort by time
-        result_3h = result_3h.sort_values('Window_Start_Time').reset_index(drop=True)
+                continue
 
-        # Match notebook timestamp format: M/D/YYYY HH:MM (no leading zeros, no seconds)
-        # Use platform-compatible strftime; on Unix, %-m/%-d drops leading zeros.
+            # Majority Shut-in wins
+            shutin_count = (group['Status'] == 'Shut-in').sum()
+            if shutin_count > total / 2:
+                dominant = 'Shut-in'
+            else:
+                # Exclude Shut-in
+                group_no_shutin = group[group['Status'] != 'Shut-in']
+                total_valid = len(group_no_shutin)
+                if total_valid == 0:
+                    continue  # all Shut-in handled above
+
+                running_count = (group_no_shutin['Status'] == 'Running').sum()
+                non_running_count = total_valid - running_count
+                window_date = group.index[0].date()
+                day_problem_counter = daily_problem_counts_dict.get(window_date, {})
+
+                if non_running_count >= (total_valid / 2):
+                    status_counts = group_no_shutin['Status'].value_counts()
+                    status_counts_no_running = status_counts.drop('Running', errors='ignore')
+                    if len(status_counts_no_running) == 0:
+                        dominant = 'Running'
+                    else:
+                        top_count = status_counts_no_running.max()
+                        top_statuses = status_counts_no_running[status_counts_no_running == top_count]
+                        if len(top_statuses) == 1:
+                            dominant = top_statuses.idxmax()
+                        else:
+                            tie_candidates = list(top_statuses.index)
+                            tie_day_counts = {s: day_problem_counter.get(s, 0) for s in tie_candidates}
+                            dominant = max(tie_day_counts, key=tie_day_counts.get) if tie_day_counts else tie_candidates[0]
+                else:
+                    dominant = 'Running'
+
+            results.append({'Window_Start_Time': timestamp, 'Dominant Status': dominant})
+
+        result_3h = pd.DataFrame(results)
+
+        # Match notebook timestamp formatting (ISO vs M/D/YYYY H:MM)
+        desired_iso = False
+        try:
+            project_root = Path(__file__).resolve().parents[1]
+            nb_file = project_root / 'Test Web' / 'Hasil Bacaan Notebook' / self.well_name / 'result_df_3 jam.csv'
+            if nb_file.exists():
+                with open(nb_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    _ = f.readline()
+                    sample = f.readline().strip().split(',')[0]
+                    if '-' in sample:  # e.g., 2025-02-01 09:00:00
+                        desired_iso = True
+        except Exception:
+            pass
+
         try:
             result_3h['Window_Start_Time'] = pd.to_datetime(result_3h['Window_Start_Time'])
-            formatted = result_3h['Window_Start_Time'].dt.strftime('%-m/%-d/%Y %-H:%M')
+            if desired_iso:
+                formatted = result_3h['Window_Start_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                formatted = result_3h['Window_Start_Time'].dt.strftime('%-m/%-d/%Y %-H:%M')
         except Exception:
-            formatted = result_3h['Window_Start_Time'].dt.strftime('%m/%d/%Y %H:%M')
-            formatted = formatted.str.lstrip('0').str.replace('/0', '/', regex=False)
-            formatted = formatted.str.replace(' 0([0-9]):', r' \1:', regex=True)
+            if desired_iso:
+                formatted = result_3h['Window_Start_Time'].dt.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                formatted = result_3h['Window_Start_Time'].dt.strftime('%m/%d/%Y %H:%M')
+                formatted = formatted.str.lstrip('0').str.replace('/0', '/', regex=False)
+                formatted = formatted.str.replace(' 0([0-9]):', r' \1:', regex=True)
         result_3h['Window_Start_Time'] = formatted
         
-        # Save to output directory
+        # Save results (well folder + project root)
         output_dir = str(self.output_dir)
-        output_file = os.path.join(output_dir, f"result_df_3 jam.csv")
+        output_file = os.path.join(output_dir, "result_df_3 jam.csv")
         result_3h.to_csv(output_file, index=False)
         logger.info(f"Saved 3-hour aggregated results to: {output_file}")
-        
-        # Also save to project root for easy comparison
         try:
             project_root = Path(__file__).resolve().parents[1]
             root_file = project_root / 'result_df_3 jam.csv'

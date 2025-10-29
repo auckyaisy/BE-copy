@@ -93,12 +93,15 @@ def main():
             import shutil
             prod_data_src = Path(args.prod_data)
             prod_data_dst = Path(__file__).parent / 'prod_data.csv'
-            
-            if prod_data_src.exists():
-                logger.info(f"Copying prod_data from {prod_data_src} to {prod_data_dst}")
-                shutil.copy(prod_data_src, prod_data_dst)
-            else:
-                logger.warning(f"Specified prod_data file not found: {prod_data_src}")
+            pipeline.prod_data_path = prod_data_src
+            if prod_data_src.exists() and prod_data_src.suffix.lower() == '.csv':
+                try:
+                    shutil.copy(prod_data_src, prod_data_dst)
+                    logger.info(f"Copied prod_data to {prod_data_dst}")
+                except Exception as e:
+                    logger.warning(f"Could not copy prod_data.csv fallback: {e}")
+            elif not prod_data_src.exists():
+                logger.warning(f"Specified prod_data path not found: {prod_data_src}")
         
         # Load and preprocess data
         pipeline.load_data(input_file)
