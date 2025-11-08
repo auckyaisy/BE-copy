@@ -10,6 +10,9 @@ from typing import Dict, Tuple, Optional, Union, List
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter
+import re
+import textwrap
+from datetime import timedelta
 
 from config.config import (
     MODEL_PATHS, FEATURE_COLUMNS, TARGET_COLUMNS,
@@ -667,6 +670,68 @@ class WellAnalysisPipeline:
             # Save outputs
             self._save_results(results)  # original simple CSVs
             self._save_failure_results(final_df)  # template-like final output
+            
+            # ============================================================
+            # 6. Tambahkan kolom Indicator dan generate latest report
+            # ============================================================
+            try:
+                logger.info("5/4 - Adding Indicator columns and generating latest report...")
+                
+                # Merge slopes ke final_df untuk keperluan indicator
+                final_df_with_slopes = final_df.copy()
+                if not slopes_df.empty and 'Window_Start_Time' in slopes_df.columns:
+                    # Merge slopes (A, IP, DP, IT, MT, V, R)
+                    slope_cols = ['A', 'IP', 'DP', 'IT', 'MT', 'V', 'R']
+                    merge_cols = ['Window_Start_Time'] + [c for c in slope_cols if c in slopes_df.columns]
+                    final_df_with_slopes = final_df_with_slopes.merge(
+                        slopes_df[merge_cols], 
+                        on='Window_Start_Time', 
+                        how='left'
+                    )
+                
+                # Load 3-hour results yang sudah disimpan
+                output_dir = str(self.output_dir)
+                result_3h_file = os.path.join(output_dir, "result_df_3 jam.csv")
+                if os.path.exists(result_3h_file):
+                    result_3h = pd.read_csv(result_3h_file)
+                    result_3h['Window_Start_Time'] = pd.to_datetime(result_3h['Window_Start_Time'])
+                    
+                    # Tambahkan indicators ke kedua dataset
+                    indicator_30min, result_3h_with_ind = self._add_indicators_to_results(
+                        final_df_with_slopes, 
+                        result_3h
+                    )
+                    
+                    # Save hasil dengan indicator
+                    # 30 menit dengan indicator
+                    indicator_30min_file = os.path.join(output_dir, f"{self.well_name}_indicator_30min.csv")
+                    indicator_30min.to_csv(indicator_30min_file, index=False)
+                    logger.info(f"Saved 30-minute results with indicators to: {indicator_30min_file}")
+                    
+                    # 3 jam dengan indicator
+                    result_3h_ind_file = os.path.join(output_dir, "result_df_3jam_with_indicator.csv")
+                    result_3h_with_ind.to_csv(result_3h_ind_file, index=False)
+                    logger.info(f"Saved 3-hour results with indicators to: {result_3h_ind_file}")
+                    
+                    # Generate latest report data untuk Flask UI
+                    logger.info("Generating Latest Status and Latest Failure data for UI...")
+                    latest_report_data = self._generate_latest_report(indicator_30min, result_3h_with_ind)
+                    
+                    # Save report data as JSON untuk Flask
+                    import json
+                    report_json_file = os.path.join(output_dir, f"{self.well_name}_latest_report.json")
+                    with open(report_json_file, 'w', encoding='utf-8') as f:
+                        json.dump(latest_report_data, f, indent=2, ensure_ascii=False)
+                    logger.info(f"Saved latest report data to: {report_json_file}")
+                    
+                    # Store in results for return to Flask
+                    results['latest_report'] = latest_report_data
+                    
+                else:
+                    logger.warning("3-hour results file not found, skipping indicator generation")
+                    
+            except Exception as e:
+                logger.warning(f"Could not add indicators or generate report: {e}")
 
             logger.info("Pipeline finished with template-aligned outputs.")
             return results
@@ -857,15 +922,19 @@ class WellAnalysisPipeline:
                 return " "
             recs = {
                 1: (
-                    "The Possibility Causes:\n 1. Well productivity less than pump design range\n 2. Restricted pump\n"
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
-                    "2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
+                    "The Possibility Causes: Well productivity less than pump design range\n"
+                    "1. Analyze fluid level and Bottom Hole Pressure (BHP)\n"
+                    "2. Adjust tubing wellhead pressure to bring pump rate within design rate\n"
+                    "The Possibility Causes: Restricted pump\n"
+                    "1. Inject solvent or diluent through annulus if fluid is highly viscous\n"
+                    "2. Use VSD “rocking mode” to remove debris"
                 ),
                 2: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Verify if vibration have increased by 20% from the pump install date\n"
-                    "2. Do shut-in test while the surface check valve is closed, and the pump is running"
+                    "1. Check performance drop (>15–20% from initial installation)\n"
+                    "2. Verify vibration increase (>20%)\n"
+                    "3. Perform shut-in test with surface check valve closed while pump is running"
                 ),
                 3: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
@@ -874,56 +943,62 @@ class WellAnalysisPipeline:
                 ),
                 4: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Adjust the tubing well head pressure and bring the pump production rate within design rate\n"
-                    "2. Conduct the fluid analysis as a basis for re-design pump"
+                    "The Possibility Causes: Well productivity above pump design range\n"
+                    "1. Analyze fluid level and BHP\n"
+                    "2. Adjust wellhead pressure to maintain design rate\n"
+                    "The Possibility Causes: Change in fluid characteristics\n"
+                    "1. Analyze fluid level and BHP\n"
+                    "2. Conduct fluid analysis for pump re-design reference"
                 ),
                 5: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Lower the value of frequency using VSD.\n"
-                    "2. Check the pump discharge pressure and compare to previous well data history"
+                    "1. Compare discharge pressure with historical data\n"
+                    "2. Reduce frequency via VSD"
                 ),
                 6: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "Analyze the fluid level and Bottom Hole Pressure (BHP) data!"
+                    "Check pump discharge pressure and production rate, compare with historical well data"
                 ),
                 7: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data!\n"
-                    "2. Adjust the tubing well head pressure and bring the pump production rate within design rate"
+                    "Adjust tubing wellhead pressure to bring production rate within design limits\n"
                 ),
                 8: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
-                    "1. Check flow line and separator for evidence of sand, mud, or debris.\n"
+                    "1. Check flow line and separator for evidence of sand, mud, or debris\n"
                     "2. Design solid control system for next installation"
                 ),
                 9: (
                     "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Verify if the valve was deliberately partially closed by Field Service Tech\n"
-                    "2. Contact the Field Service Tech to check out well on location"
+                    "2. Contact the Field Technician for on-site inspection"
                 ),
                 10: (
-                    "Electrical Downhole Problem suspected: "
-                    "1) Verify surface equipment (VSD, step-up transformer, junction box) to confirm failure is downhole. "
-                    "2) Perform a VSD soft shutdown to prevent reverse current surges. "
-                    "3) Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "1. Verify surface equipment (VSD, transformer, junction box) to isolate downhole issue\n"
+                    "2. Perform VSD soft shutdown to prevent reverse current damage\n"
+                    "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
                 ),
                 11: (
                     "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
                 ),
                 12: (
-                    "Well producing 100% water — likely water breakthrough or reservoir depletion: "
-                    "Causes: 1) Water coning/channeling from aquifer, 2) Casing/tubing leak allowing water influx, 3) Reservoir pressure depletion. "
-                    "Recommended actions: 1) Verify production test (separator test or sampling), 2) Check GOR trend (near zero indicates water dominance), "
-                    "3) Review well completion to find water source, 4) Consider temporary shut-in or zonal isolation, 5) Evaluate re-perforation or water-shutoff treatment."
+                    "NOTIFICATIONS FOR ENGINEER!\n"
+                    "The Possibility Causes: Well producing 100% water—possible water breakthrough or reservoir depletion\n"
+                    "1. Check production test and GOR trend to confirm water source\n"
+                    "2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
                 ),
                 13: (
-                    "Start-up Phase after extended data gap: 1) Monitor equipment closely during ramp-up, "
-                    "2) Ensure surface controls follow the planned start-up procedure, "
-                    "3) Confirm downhole pressures and temperatures stabilize before normal operation."
+                    "Start-up Phase after extended data gap:\n"
+                    "1. Conduct no-load test before commissioning to ensure proper drive operation\n"
+                    "2. Verify drive parameters, transformer taps, and gauge units are correctly set\n"
+                    "3. Test both rotations; select the one with lower amperage (correct pump rotation)\n"
+                    "4. Monitor WHP—if no buildup, briefly choke the well to initiate flow and confirm ΔP"
                 ),
             }
-            return recs.get(x, " ")
 
+            return recs.get(x, " ")
+        
         out['Status'] = out['Prediction'].apply(status_map)
         out['Recommendation'] = out['Prediction'].apply(recommendation_map)
         # Ensure Recommendation is always a string (notebook uses ' ' not NaN)
@@ -1185,7 +1260,20 @@ class WellAnalysisPipeline:
             attempted.append(str(cand))
             try:
                 if cand.exists():
+                    # First try: normal read
                     df_try = pd.read_csv(cand)
+                    
+                    # Check if first data row looks like a units row (e.g., "psig", "%", "hours")
+                    # If so, skip it by re-reading with skiprows=[1]
+                    if len(df_try) > 0 and {'Date', 'WC'}.issubset(df_try.columns):
+                        first_date = str(df_try['Date'].iloc[0]).lower()
+                        first_wc = str(df_try['WC'].iloc[0]).lower()
+                        # Detect unit row patterns
+                        if any(unit in first_date for unit in ['psig', 'hours', 'bopd', 'bwpd', '"/64"']) or \
+                           first_wc in ['%', 'scf/bbl', 'bbls', 'mbbls', 'bopd', 'bwpd']:
+                            # Re-read skipping row 1 (the units row)
+                            df_try = pd.read_csv(cand, skiprows=[1])
+                    
                     # Validate minimal columns
                     if {'Date', 'WC'}.issubset(df_try.columns):
                         df = df_try
@@ -1446,6 +1534,97 @@ class WellAnalysisPipeline:
             results.append({'Window_Start_Time': timestamp, 'Dominant Status': dominant})
 
         result_3h = pd.DataFrame(results)
+        
+        # Map Dominant Status ke recommendation
+        def recommendation_by_status(status: str) -> str:
+            """Map status ke recommendation text."""
+            status_to_pred = {
+                'Running': 0,
+                'Low PI': 1,
+                'Pump Wear': 2,
+                'Tubing Leak': 3,
+                'Higher PI': 4,
+                'Increase in Frequency': 5,
+                'Open Choke': 6,
+                'Increase in Watercut': 7,
+                'Sand Ingestion': 8,
+                'Closed Valve': 9,
+                'Electrical Downhole Problem': 10,
+                'Shut-in': 11,
+                '100% Watercut': 12,
+                'Start-up Phase': 13,
+            }
+            pred_num = status_to_pred.get(status, 0)
+            
+            # Use existing recommendation_map function from _assemble_failure_results
+            recs = {
+                0: " ",
+                1: (
+                    "The Possibility Causes: 1. Well productivity less than pump design range "
+                    "2. Restricted pump NOTIFICATIONS FOR ENGINEER! 1. Analyze the fluid level and "
+                    "Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head "
+                    "pressure and bring the pump production rate within design rate 2. Check the possibility "
+                    "of restricted pump! Pumping fluids through tubing when water sources are available."
+                ),
+                2: (
+                    "NOTIFICATIONS FOR ENGINEER! 1. Check performance drop (>15–20% from initial installation) "
+                    "2. Verify vibration increase (>20%) 3. Perform shut-in test with surface check valve "
+                    "closed while pump is running"
+                ),
+                3: (
+                    "NOTIFICATIONS FOR ENGINEER! 1. Confirm by a pressure test at the tubing wellhead "
+                    "2. Meanwhile, fill up the tubing and pressure up against RCV"
+                ),
+                4: (
+                    "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well productivity above pump design range "
+                    "1. Analyze fluid level and BHP 2. Adjust wellhead pressure to maintain design rate "
+                    "The Possibility Causes: Change in fluid characteristics 1. Analyze fluid level and BHP "
+                    "2. Conduct fluid analysis for pump re-design reference"
+                ),
+                5: (
+                    "NOTIFICATIONS FOR ENGINEER! 1. Compare discharge pressure with historical data "
+                    "2. Reduce frequency via VSD"
+                ),
+                6: (
+                    "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, "
+                    "compare with historical well data"
+                ),
+                7: (
+                    "NOTIFICATIONS FOR ENGINEER! Adjust tubing wellhead pressure to bring production rate "
+                    "within design limits"
+                ),
+                8: (
+                    "NOTIFICATIONS FOR ENGINEER! 1. Check flow line and separator for evidence of sand, mud, "
+                    "or debris 2. Design solid control system for next installation"
+                ),
+                9: (
+                    "NOTIFICATIONS FOR ENGINEER! 1. Verify if the valve was deliberately partially closed by "
+                    "Field Service Tech 2. Contact the Field Technician for on-site inspection"
+                ),
+                10: (
+                    "NOTIFICATIONS FOR ENGINEER! 1. Verify surface equipment (VSD, transformer, junction box) "
+                    "to isolate downhole issue 2. Perform VSD soft shutdown to prevent reverse current damage "
+                    "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
+                ),
+                11: (
+                    "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency "
+                    "are expected to be zero."
+                ),
+                12: (
+                    "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well producing 100% water—possible water "
+                    "breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water "
+                    "source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
+                ),
+                13: (
+                    "Start-up Phase after extended data gap: 1. Conduct no-load test before commissioning to ensure "
+                    "proper drive operation 2. Verify drive parameters, transformer taps, and gauge units are correctly "
+                    "set 3. Test both rotations; select the one with lower amperage (correct pump rotation) "
+                    "4. Monitor WHP—if no buildup, briefly choke the well to initiate flow and confirm ΔP"
+                ),
+            }
+            return recs.get(pred_num, " ")
+        
+        result_3h['Recommendation'] = result_3h['Dominant Status'].apply(recommendation_by_status)
 
         # Match notebook timestamp formatting (ISO vs M/D/YYYY H:MM)
         desired_iso = False
@@ -1488,6 +1667,336 @@ class WellAnalysisPipeline:
             logger.info(f"Saved 3-hour aggregated results to project root: {root_file}")
         except Exception as e:
             logger.warning(f"Could not save 3-hour results to project root: {e}")
+    
+    def _slope_symbol(self, value: float) -> str:
+        """Tentukan simbol arah berdasarkan nilai slope."""
+        if value >= 0.005:
+            return "↑"
+        elif value <= -0.005:
+            return "↓"
+        else:
+            return "→"
+    
+    def _make_indicator(self, row: pd.Series) -> str:
+        """Buat kolom indicator berdasarkan status dan slopes."""
+        # Mapping kolom slope per status
+        status_slope_map = {
+            "Low PI": ["A", "IP", "DP", "Q"],
+            "Pump Wear": ["A", "IP", "DP", "V", "Q"],
+            "Tubing Leak": ["A", "IP", "DP", "IT", "MT", "Q"],
+            "Higher PI": ["A", "IP", "DP", "Q"],
+            "Increase in Frequency": ["A", "IP", "DP", "MT", "Q"],
+            "Open Choke": ["A", "IP", "DP", "MT", "Q"],
+            "Increase in Watercut": ["A", "IP", "DP", "MT", "Q"],
+            "Sand Ingestion": ["A", "IP", "DP", "MT", "V", "Q"],
+            "Closed Valve": ["A", "IP", "DP", "IT", "MT", "Q"]
+        }
+        
+        status = row["Status"]
+        
+        # Kosong untuk status tertentu
+        if status in ["Running", "Shut-in", "Start-up Phase"]:
+            return ""
+        
+        # Custom text untuk status khusus
+        if status == "100% Watercut":
+            return "100% WC in Prod"
+        elif status == "Electrical Downhole Problem":
+            return "A and Freq 0, others constant"
+        
+        # Gunakan daftar kolom sesuai mapping
+        cols = status_slope_map.get(status, [])
+        if not cols:
+            return ""
+        
+        indicators = []
+        for col in cols:
+            # Map Q back to R for internal lookup
+            lookup_col = 'R' if col == 'Q' else col
+            if lookup_col in row.index and pd.notna(row[lookup_col]):
+                indicators.append(f"{col}{self._slope_symbol(row[lookup_col])}")
+        
+        return " ".join(indicators)
+    
+    def _combine_indicators(self, indicators: List[str]) -> str:
+        """Gabungkan indikator dari beberapa window dengan simbol yang digabungkan."""
+        symbol_dict = {}
+        
+        for ind in indicators:
+            if not ind or not isinstance(ind, str):
+                continue
+            pairs = re.findall(r"([A-Z]+)([↑↓→])", ind)
+            for var, sym in pairs:
+                symbol_dict.setdefault(var, set()).add(sym)
+        
+        # Urutan kolom tetap mengikuti urutan logis
+        col_order = ["A", "IP", "DP", "IT", "MT", "V", "Q"]
+        
+        combined = []
+        for col in col_order:
+            if col in symbol_dict:
+                # Urutkan simbol agar konsisten
+                sorted_syms = "".join(sorted(symbol_dict[col], key=lambda x: "→↑↓".index(x)))
+                combined.append(f"{col}{sorted_syms}")
+        
+        return " ".join(combined)
+    
+    def _add_indicators_to_results(self, indicator_df: pd.DataFrame, result_3jam: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Tambahkan kolom Indicator ke hasil 30 menit dan 3 jam."""
+        # 1. Tambahkan Indicator ke data 30 menit
+        indicator = indicator_df.copy()
+        
+        # Rename R ke Q untuk visualisasi (tapi tetap pakai R untuk komputasi internal)
+        # Buat kolom indicator dengan mapping
+        indicator["Indicator"] = indicator.apply(self._make_indicator, axis=1)
+        
+        # Susun ulang kolom: Window_Start_Time, Indicator, Status, Recommendation
+        cols_order = ["Window_Start_Time", "Indicator", "Status", "Recommendation"]
+        # Tambahkan kolom lain yang mungkin ada
+        for col in indicator.columns:
+            if col not in cols_order:
+                cols_order.append(col)
+        indicator = indicator[[c for c in cols_order if c in indicator.columns]]
+        
+        # 2. Tambahkan Indicator ke data 3 jam
+        result_3h = result_3jam.copy()
+        indicators_combined = []
+        
+        for _, row in result_3h.iterrows():
+            start_time = pd.to_datetime(row["Window_Start_Time"])
+            end_time = start_time + timedelta(hours=3)
+            status = row["Dominant Status"]
+            
+            # Tangani status khusus langsung
+            if status == "100% Watercut":
+                indicators_combined.append("100% WC in Prod")
+                continue
+            elif status == "Electrical Downhole Problem":
+                indicators_combined.append("A and Freq 0, others constant")
+                continue
+            elif status in ["Running", "Shut-in", "Start-up Phase"]:
+                indicators_combined.append("")
+                continue
+            
+            # Untuk status lainnya, ambil subset 3 jam
+            subset = indicator[
+                (pd.to_datetime(indicator["Window_Start_Time"]) >= start_time)
+                & (pd.to_datetime(indicator["Window_Start_Time"]) < end_time)
+                & (indicator["Status"] == status)
+            ]
+            
+            combined = self._combine_indicators(subset["Indicator"].tolist())
+            indicators_combined.append(combined)
+        
+        result_3h["Indicator"] = indicators_combined
+        
+        # Susun ulang kolom: Window_Start_Time, Indicator, Dominant Status, Recommendation
+        cols_3h_order = ["Window_Start_Time", "Indicator", "Dominant Status"]
+        for col in result_3h.columns:
+            if col not in cols_3h_order:
+                cols_3h_order.append(col)
+        result_3h = result_3h[[c for c in cols_3h_order if c in result_3h.columns]]
+        
+        # Urutkan berdasarkan waktu
+        result_3h = result_3h.sort_values("Window_Start_Time", ascending=True).reset_index(drop=True)
+        indicator = indicator.sort_values("Window_Start_Time", ascending=True).reset_index(drop=True)
+        
+        return indicator, result_3h
+    
+    def _parse_indicator(self, ind_text: str) -> List[str]:
+        """Parse indicator text menjadi list teks yang mudah dibaca."""
+        param_map = {
+            "A": "Ampere",
+            "IP": "Intake Pressure",
+            "DP": "Discharge Pressure",
+            "IT": "Intake Temperature",
+            "MT": "Motor Temperature",
+            "V": "Vibration",
+            "Q": "Rate"
+        }
+        
+        def arrow_meaning(symbol):
+            return {
+                "↑": "Increase",
+                "↓": "Decrease",
+                "→": "Stable"
+            }.get(symbol, "")
+        
+        if not isinstance(ind_text, str) or not ind_text.strip():
+            return []
+        
+        pairs = re.findall(r"([A-Z]+)([↑↓→]+)", ind_text)
+        result = []
+        for var, syms in pairs:
+            if var in param_map:
+                for s in syms:
+                    result.append(f"{param_map[var]} ({s}): {arrow_meaning(s)}")
+        return result
+    
+    def _wrap_text(self, text: str, width: int = 38) -> str:
+        """Wrap long text lines so they fit nicely inside the table."""
+        if not isinstance(text, str) or text.strip() == "":
+            return ""
+        return "\n".join(textwrap.wrap(text, width=width))
+    
+    def _print_report(self, title: str, failure_row: Optional[pd.Series], status_row: Optional[pd.Series]) -> str:
+        """Print a side-by-side failure vs status report in a table-like format."""
+        output = []
+        output.append(f"\n# {title}")
+        output.append("-" * 76)
+        
+        # Set column widths
+        col_width = 38
+        divider = " | "
+        
+        # Extract key data
+        fail_time = failure_row["Window_Start_Time"] if failure_row is not None else "-"
+        stat_time = status_row["Window_Start_Time"] if status_row is not None else "-"
+        
+        # Get status/indicator/recommendation
+        if "Dominant Status" in failure_row.index if failure_row is not None else False:
+            fail_status = failure_row["Dominant Status"]
+            fail_ind = failure_row.get("Indicator", "")
+            fail_rec = failure_row.get("Recommendation", "")
+        else:
+            fail_status = failure_row["Status"] if failure_row is not None else "-"
+            fail_ind = failure_row.get("Indicator", "") if failure_row is not None else ""
+            fail_rec = failure_row.get("Recommendation", "") if failure_row is not None else ""
+        
+        if "Dominant Status" in status_row.index if status_row is not None else False:
+            stat_status = status_row["Dominant Status"]
+            stat_ind = status_row.get("Indicator", "")
+            stat_rec = status_row.get("Recommendation", "")
+        else:
+            stat_status = status_row["Status"] if status_row is not None else "-"
+            stat_ind = status_row.get("Indicator", "") if status_row is not None else ""
+            stat_rec = status_row.get("Recommendation", "") if status_row is not None else ""
+        
+        # Header row
+        output.append(f"{'Latest Failure'.ljust(col_width)}{divider}{'Latest Status'.ljust(col_width)}")
+        
+        # Time and status rows (bold dengan **)
+        output.append(f"**{fail_time}**".ljust(col_width + 4) + divider + f"**{stat_time}**")
+        output.append(f"**{fail_status}**".ljust(col_width + 4) + divider + f"**{stat_status}**")
+        
+        # Indicators
+        indicators_fail = self._parse_indicator(fail_ind)
+        indicators_stat = self._parse_indicator(stat_ind)
+        
+        output.append(f"{'Indicator:'.ljust(col_width)}{divider}{'Indicator:'.ljust(col_width)}")
+        
+        # Pad untuk memastikan jumlah baris sama
+        max_ind_len = max(len(indicators_fail), len(indicators_stat))
+        for i in range(max_ind_len):
+            f_line = indicators_fail[i] if i < len(indicators_fail) else ""
+            s_line = indicators_stat[i] if i < len(indicators_stat) else ""
+            output.append(f"{f_line.ljust(col_width)}{divider}{s_line.ljust(col_width)}")
+        
+        # Recommendations section
+        fail_reco_wrapped = self._wrap_text(str(fail_rec), width=col_width - 2)
+        stat_reco_wrapped = self._wrap_text(str(stat_rec), width=col_width - 2)
+        
+        output.append(f"{'Recommendation:'.ljust(col_width)}{divider}{'Recommendation:'.ljust(col_width)}")
+        
+        fail_lines = fail_reco_wrapped.split("\n") if fail_reco_wrapped else [""]
+        stat_lines = stat_reco_wrapped.split("\n") if stat_reco_wrapped else [""]
+        max_len = max(len(fail_lines), len(stat_lines))
+        
+        for i in range(max_len):
+            fail_line = fail_lines[i] if i < len(fail_lines) else ""
+            stat_line = stat_lines[i] if i < len(stat_lines) else ""
+            output.append(f"{fail_line.ljust(col_width)}{divider}{stat_line.ljust(col_width)}")
+        
+        output.append("-" * 76)
+        
+        return "\n".join(output)
+    
+    def _generate_latest_report(self, indicator_30min: pd.DataFrame, result_3h: pd.DataFrame) -> Dict:
+        """Generate latest status and latest failure data untuk Flask UI."""
+        ignore_status = ["Running", "Shut-in", "Start-up Phase"]
+        
+        # Pastikan kolom waktu sudah datetime
+        indicator_30min = indicator_30min.copy()
+        result_3h = result_3h.copy()
+        indicator_30min["Window_Start_Time"] = pd.to_datetime(indicator_30min["Window_Start_Time"])
+        result_3h["Window_Start_Time"] = pd.to_datetime(result_3h["Window_Start_Time"])
+        
+        report_data = {
+            "3_hours": {},
+            "30_minutes": {}
+        }
+        
+        # ========== 3 HOURS READING ==========
+        # Latest Status (termasuk Running)
+        latest_status_3h = (
+            result_3h
+            .sort_values("Window_Start_Time", ascending=False)
+            .head(1)
+        )
+        
+        # Latest Failure (exclude normal status)
+        latest_failure_3h = (
+            result_3h[~result_3h["Dominant Status"].isin(ignore_status)]
+            .sort_values("Window_Start_Time", ascending=False)
+            .head(1)
+        )
+        
+        if not latest_status_3h.empty:
+            stat_row = latest_status_3h.iloc[0]
+            report_data["3_hours"]["latest_status"] = {
+                "time": str(stat_row["Window_Start_Time"]),
+                "status": stat_row.get("Dominant Status", "-"),
+                "indicator": stat_row.get("Indicator", ""),
+                "indicator_parsed": self._parse_indicator(stat_row.get("Indicator", "")),
+                "recommendation": stat_row.get("Recommendation", "")
+            }
+        
+        if not latest_failure_3h.empty:
+            fail_row = latest_failure_3h.iloc[0]
+            report_data["3_hours"]["latest_failure"] = {
+                "time": str(fail_row["Window_Start_Time"]),
+                "status": fail_row.get("Dominant Status", "-"),
+                "indicator": fail_row.get("Indicator", ""),
+                "indicator_parsed": self._parse_indicator(fail_row.get("Indicator", "")),
+                "recommendation": fail_row.get("Recommendation", "")
+            }
+        
+        # ========== 30 MINUTES READING ==========
+        # Latest Status (termasuk Running)
+        latest_status_30 = (
+            indicator_30min
+            .sort_values("Window_Start_Time", ascending=False)
+            .head(1)
+        )
+        
+        # Latest Failure (exclude normal status)
+        latest_failure_30 = (
+            indicator_30min[~indicator_30min["Status"].isin(ignore_status)]
+            .sort_values("Window_Start_Time", ascending=False)
+            .head(1)
+        )
+        
+        if not latest_status_30.empty:
+            stat_row = latest_status_30.iloc[0]
+            report_data["30_minutes"]["latest_status"] = {
+                "time": str(stat_row["Window_Start_Time"]),
+                "status": stat_row.get("Status", "-"),
+                "indicator": stat_row.get("Indicator", ""),
+                "indicator_parsed": self._parse_indicator(stat_row.get("Indicator", "")),
+                "recommendation": stat_row.get("Recommendation", "")
+            }
+        
+        if not latest_failure_30.empty:
+            fail_row = latest_failure_30.iloc[0]
+            report_data["30_minutes"]["latest_failure"] = {
+                "time": str(fail_row["Window_Start_Time"]),
+                "status": fail_row.get("Status", "-"),
+                "indicator": fail_row.get("Indicator", ""),
+                "indicator_parsed": self._parse_indicator(fail_row.get("Indicator", "")),
+                "recommendation": fail_row.get("Recommendation", "")
+            }
+        
+        return report_data
     
     def _open_in_os(self, path: Path) -> None:
         """Try to open a file in the OS default viewer (macOS, Windows, Linux)."""

@@ -1,0 +1,34 @@
+{
+  "3_hours": {
+    "latest_status": {
+      "time": "2025-05-13 18:00:00",
+      "status": "Shut-in",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
+    },
+    "latest_failure": {
+      "time": "2025-05-10 15:00:00",
+      "status": "100% Watercut",
+      "indicator": "100% WC in Prod",
+      "indicator_parsed": [],
+      "recommendation": "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well producing 100% water—possible water breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
+    }
+  },
+  "30_minutes": {
+    "latest_status": {
+      "time": "2025-05-13 19:00:00",
+      "status": "Shut-in",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
+    },
+    "latest_failure": {
+      "time": "2025-05-10 16:30:00",
+      "status": "100% Watercut",
+      "indicator": "100% WC in Prod",
+      "indicator_parsed": [],
+      "recommendation": "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well producing 100% water—possible water breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
+    }
+  }
+}

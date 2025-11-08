@@ -1,0 +1,10 @@
+well,3hour_exists,3hour_match,3hour_rows_ref,3hour_rows_new,3hour_status_match,3hour_status_mismatch,30min_exists,30min_match,30min_rows_ref,30min_rows_new,status,errors
+SKW-02,True,True,1070,1070,1070,0,True,True,6354,6354,✅ PERFECT,[]
+SKW-07,True,True,1830,1830,1830,0,True,True,10929,10929,✅ PERFECT,[]
+SKW-14,True,True,305,305,305,0,True,True,1825,1825,✅ PERFECT,[]
+SKW-18,True,True,429,429,429,0,True,True,2548,2548,✅ PERFECT,[]
+SKW-29,True,True,1905,1905,1905,0,True,True,11408,11408,✅ PERFECT,[]
+SKW-30,True,True,283,283,283,0,True,True,1690,1690,✅ PERFECT,[]
+SKW-33,True,True,528,528,528,0,True,True,3122,3122,✅ PERFECT,[]
+SKW-35,True,True,1348,1348,1348,0,True,True,8038,8038,✅ PERFECT,[]
+SKW-36,True,True,539,539,539,0,True,True,3212,3212,✅ PERFECT,[]

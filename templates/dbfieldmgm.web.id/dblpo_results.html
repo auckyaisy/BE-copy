@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>dbLPO - Loss Production Opportunity (LPO) Database &amp; Analysis</title>
+  <link rel="icon" href="https://dbfieldmgm.web.id/favicon.ico">
+
+  <!-- Core layout styles borrowed from dbLPO app build -->
+  <link rel="stylesheet" type="text/css" href="https://dbfieldmgm.web.id/loader.css">
+  <link rel="preload" as="style" href="https://dbfieldmgm.web.id/app/assets/main-uooZle6K.css">
+  <link rel="stylesheet" href="https://dbfieldmgm.web.id/app/assets/main-uooZle6K.css">
+
+  <!-- Icons & utilities -->
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- DataTables & Plotly -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.dataTables.min.css">
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background-color: rgb(var(--v-theme-background, 248,247,250));
+      margin: 0;
+      color: #2F2B3D;
+    }
+
+    .layout-wrapper {
+      display: flex;
+      min-height: 100vh;
+      background: radial-gradient(circle at top right, rgba(115,103,240,0.08), transparent 45%),
+                  radial-gradient(circle at top left, rgba(0,207,232,0.08), transparent 50%),
+                  #f3f3f3;
+    }
+
+    .nav-panel {
+      width: 260px;
+      background: linear-gradient(140deg, #2b263a 0%, #211f31 85%);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      padding: 26px 22px;
+      box-shadow: 0 20px 40px rgba(13, 15, 27, 0.45);
+    }
+
+    .app-logo-title {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+
+    .nav-section {
+      margin-top: 2.5rem;
+      display: grid;
+      gap: 1.1rem;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 0.9rem;
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      color: rgba(255, 255, 255, 0.82);
+      text-decoration: none;
+      font-weight: 500;
+      transition: transform 0.15s ease, background 0.15s ease;
+    }
+
+    .nav-item.active {
+      background: rgba(115,103,240,0.2);
+      color: #fff;
+      box-shadow: 0 18px 30px rgba(115, 103, 240, 0.18);
+      transform: translateX(6px);
+    }
+
+    .nav-item:hover {
+      transform: translateX(4px);
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .nav-item i {
+      font-size: 1.3rem;
+    }
+
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 32px 48px;
+    }
+
+    .page-header {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 0.95), rgba(115, 103, 240, 0.75));
+      border-radius: 18px;
+      padding: 32px 38px;
+      color: #fff;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      box-shadow: 0 18px 55px rgba(83, 73, 192, 0.45);
+      margin-bottom: 28px;
+    }
+
+    .page-header h1 {
+      margin: 0 0 12px 0;
+      font-size: 2.35rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .page-header p {
+      margin: 0;
+      font-size: 1.05rem;
+      opacity: 0.88;
+    }
+
+    .btn-outline {
+      color: rgba(255,255,255,0.92);
+      border: 1px solid rgba(255,255,255,0.38);
+      border-radius: 12px;
+      padding: 10px 22px;
+      text-decoration: none;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      backdrop-filter: blur(6px);
+      transition: background 0.3s ease;
+    }
+
+    .btn-outline:hover {
+      background: rgba(255, 255, 255, 0.16);
+    }
+
+    .dropdown-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 12px;
+    }
+
+    .dropdown-filters label {
+      display: flex;
+      flex-direction: column;
+      font-size: 0.75rem;
+      letter-spacing: 0.02em;
+      color: #9E9AB2;
+      text-transform: uppercase;
+      gap: 6px;
+    }
+
+    .form-select {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid rgba(115, 103, 240, 0.25);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.9rem;
+      color: #4B465C;
+      min-width: 160px;
+      appearance: none;
+    }
+
+    .form-select:focus {
+      outline: none;
+      border-color: rgba(115, 103, 240, 0.55);
+      box-shadow: 0 0 0 2px rgba(115, 103, 240, 0.15);
+    }
+
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 18px;
+      box-shadow: 0 18px 35px rgba(30, 30, 60, 0.12);
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 20px 26px 16px 26px;
+      border-bottom: 1px solid rgba(115, 103, 240, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-header h2 {
+      margin: 0;
+      font-size: 1.2rem;
+      color: #5548a6;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    .card-body {
+      padding: 24px 26px;
+    }
+
+    .failure-card {
+      background: linear-gradient(136deg, rgba(33, 35, 49, 0.96), rgba(18, 19, 28, 0.92));
+      border: 1px solid rgba(115, 103, 240, 0.28);
+      color: #F6F6FF;
+      box-shadow: 0 24px 50px rgba(13, 15, 27, 0.42);
+    }
+
+    .failure-card .card-header {
+      border-color: rgba(255,255,255,0.05);
+    }
+
+    .failure-card h2 {
+      color: #fff;
+    }
+
+    .failure-section {
+      margin-bottom: 20px;
+      padding: 18px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .failure-section:last-of-type {
+      margin-bottom: 0;
+    }
+
+    .failure-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .status-badge {
+      background: rgba(234, 84, 85, 0.22);
+      color: #ff9ca5;
+      padding: 6px 18px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      border: 1px solid rgba(234, 84, 85, 0.35);
+      text-transform: uppercase;
+    }
+
+    .time-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.78);
+    }
+
+    .indicator-box {
+      background: rgba(0, 207, 232, 0.12);
+      border: 1px solid rgba(0, 207, 232, 0.35);
+      padding: 16px;
+      border-radius: 12px;
+      margin-bottom: 16px;
+    }
+
+    .indicator-value {
+      font-family: 'Source Code Pro', 'Courier New', monospace;
+      letter-spacing: 0.04em;
+      font-size: 1rem;
+      margin-bottom: 10px;
+    }
+
+    ol.indicator-legend {
+      margin: 0;
+      padding-left: 20px;
+      font-size: 0.9rem;
+      display: grid;
+      gap: 0.35rem;
+      color: rgba(255,255,255,0.75);
+    }
+
+    .recommendation-box {
+      background: rgba(115, 103, 240, 0.18);
+      border: 1px solid rgba(115, 103, 240, 0.35);
+      border-radius: 12px;
+      padding: 16px;
+      color: rgba(255,255,255,0.88);
+    }
+
+    .plot-img {
+      max-width: 100%;
+      border-radius: 12px;
+      box-shadow: 0 12px 24px rgba(80, 80, 120, 0.12);
+    }
+
+    .nonrun-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(255,255,255,0.96);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+
+    .nonrun-table thead {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 0.16), rgba(115, 103, 240, 0.08));
+      color: #4B465C;
+    }
+
+    .nonrun-table th,
+    .nonrun-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(115, 103, 240, 0.12);
+      font-size: 0.95rem;
+    }
+
+    .status-critical {
+      background-color: rgba(234, 84, 85, 0.08) !important;
+    }
+
+    .status-critical td {
+      color: #EA5455 !important;
+      font-weight: 500;
+    }
+
+    .badge-custom {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: rgba(234, 84, 85, 0.1);
+      border: 1px solid rgba(234, 84, 85, 0.18);
+      color: #B42318;
+      font-weight: 500;
+      font-size: 0.85rem;
+    }
+
+    #dailyBar {
+      width: 100%;
+      min-height: 360px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fff;
+      box-shadow: inset 0 0 0 1px rgba(115, 103, 240, 0.08);
+    }
+
+    #dailyLegend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 18px;
+      justify-content: center;
+    }
+
+    .tables-section {
+      margin-top: 24px;
+      display: grid;
+      gap: 24px;
+    }
+
+    table.dataTable thead th {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 0.08), rgba(115, 103, 240, 0.05));
+      color: #5A53A1;
+      font-weight: 600;
+    }
+
+    table.dataTable tbody tr:hover {
+      background-color: rgba(115, 103, 240, 0.04);
+    }
+
+    .footer-note {
+      margin-top: 32px;
+      text-align: center;
+      color: #9E9AB2;
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 1024px) {
+      .layout-wrapper {
+        flex-direction: column;
+      }
+      .nav-panel {
+        width: auto;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 22px;
+      }
+      .nav-section {
+        margin-top: 0;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        width: 100%;
+      }
+      .content-area {
+        padding: 28px;
+      }
+    }
+  </style>
+</head>
+
+<body class="skin--default">
+  <div class="layout-wrapper">
+    <aside class="nav-panel">
+      <div>
+        <h1 class="app-logo-title">dbLPO</h1>
+        <p style="margin: 4px 0 0 0; font-size: 0.9rem; opacity: 0.65;">Loss Production Opportunity</p>
+      </div>
+      <div class="nav-section">
+        <a class="nav-item" href="https://dbfieldmgm.web.id/app/home" target="_blank" rel="noopener">
+          <i class="mdi mdi-home-outline"></i>
+          Home Portal
+        </a>
+        <a class="nav-item active" href="javascript:void(0);">
+          <i class="mdi mdi-input-power"></i>
+          ESP Failure Prediction
+        </a>
+        <a class="nav-item" href="https://dbfieldmgm.web.id/app/lpo/summary" target="_blank" rel="noopener">
+          <i class="mdi mdi-chart-pie"></i>
+          LPO Summary
+        </a>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <header class="page-header">
+        <div>
+          <h1>ESP Failure Prediction</h1>
+          <p>Well: {{ well_name }}</p>
+        </div>
+        <a href="{{ url_for('index') }}" class="btn-outline">
+          <i class="mdi mdi-upload"></i>
+          New Analysis
+        </a>
+      </header>
+
+      {% if latest_report %}
+      <section class="card failure-card" aria-label="Latest status comparison">
+        <div class="card-header">
+          <h2><i class="mdi mdi-alert-decagram-outline"></i> Latest Status & Failure Comparison</h2>
+        </div>
+        <div class="card-body">
+          <!-- 3-HOUR READING -->
+          {% if latest_report.get('3_hours') %}
+          <div class="failure-section" style="margin-bottom: 32px;">
+            <h3 style="margin-top: 0; font-size: 1rem; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin-bottom: 18px;">3-Hour Reading</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+              <!-- Latest Failure Column -->
+              {% if latest_report['3_hours'].get('latest_failure') %}
+              <div style="background: rgba(234, 84, 85, 0.08); border: 1px solid rgba(234, 84, 85, 0.25); border-radius: 12px; padding: 18px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 0.9rem; color: #ff9ca5; text-transform: uppercase; letter-spacing: 0.05em;">Latest Failure</h4>
+                <div class="failure-meta" style="margin-bottom: 14px;">
+                  <span class="status-badge" style="display: block; margin-bottom: 8px; text-align: center;">{{ latest_report['3_hours']['latest_failure']['status'] }}</span>
+                  <span class="time-text" style="justify-content: center;"><i class="mdi mdi-clock-outline"></i>{{ latest_report['3_hours']['latest_failure']['time'] }}</span>
+                </div>
+                {% if latest_report['3_hours']['latest_failure'].get('indicator') %}
+                <div class="indicator-box" style="margin-top: 14px;">
+                  <strong style="display:block; margin-bottom: 8px; color: #00E7FF; font-size: 0.85rem;">Indicator:</strong>
+                  <div class="indicator-value" style="font-size: 0.9rem; margin-bottom: 8px;">{{ latest_report['3_hours']['latest_failure']['indicator'] }}</div>
+                  {% if latest_report['3_hours']['latest_failure'].get('indicator_parsed') %}
+                  <ol style="margin: 0; padding-left: 18px; font-size: 0.8rem; color: rgba(255,255,255,0.7);">
+                    {% for ind in latest_report['3_hours']['latest_failure']['indicator_parsed'] %}
+                    <li>{{ ind }}</li>
+                    {% endfor %}
+                  </ol>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% if latest_report['3_hours']['latest_failure'].get('recommendation') %}
+                <div class="recommendation-box" style="margin-top: 14px; font-size: 0.85rem;">
+                  <strong style="display:block; margin-bottom: 6px;">Recommendation</strong>
+                  <div style="line-height: 1.5;">{{ latest_report['3_hours']['latest_failure']['recommendation'] }}</div>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              <!-- Latest Status Column -->
+              {% if latest_report['3_hours'].get('latest_status') %}
+              <div style="background: rgba(115, 103, 240, 0.08); border: 1px solid rgba(115, 103, 240, 0.25); border-radius: 12px; padding: 18px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 0.9rem; color: #b8b2f3; text-transform: uppercase; letter-spacing: 0.05em;">Latest Status</h4>
+                <div class="failure-meta" style="margin-bottom: 14px;">
+                  <span class="status-badge" style="display: block; margin-bottom: 8px; text-align: center; {% if latest_report['3_hours']['latest_status']['status'] == 'Running' %}background: rgba(40, 199, 111, 0.22); color: #7dffb2; border-color: rgba(40, 199, 111, 0.35);{% endif %}">{{ latest_report['3_hours']['latest_status']['status'] }}</span>
+                  <span class="time-text" style="justify-content: center;"><i class="mdi mdi-clock-outline"></i>{{ latest_report['3_hours']['latest_status']['time'] }}</span>
+                </div>
+                {% if latest_report['3_hours']['latest_status'].get('indicator') %}
+                <div class="indicator-box" style="margin-top: 14px;">
+                  <strong style="display:block; margin-bottom: 8px; color: #00E7FF; font-size: 0.85rem;">Indicator:</strong>
+                  <div class="indicator-value" style="font-size: 0.9rem; margin-bottom: 8px;">{{ latest_report['3_hours']['latest_status']['indicator'] }}</div>
+                  {% if latest_report['3_hours']['latest_status'].get('indicator_parsed') %}
+                  <ol style="margin: 0; padding-left: 18px; font-size: 0.8rem; color: rgba(255,255,255,0.7);">
+                    {% for ind in latest_report['3_hours']['latest_status']['indicator_parsed'] %}
+                    <li>{{ ind }}</li>
+                    {% endfor %}
+                  </ol>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% if latest_report['3_hours']['latest_status'].get('recommendation') %}
+                <div class="recommendation-box" style="margin-top: 14px; font-size: 0.85rem;">
+                  <strong style="display:block; margin-bottom: 6px;">Recommendation</strong>
+                  <div style="line-height: 1.5;">{{ latest_report['3_hours']['latest_status']['recommendation'] }}</div>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+
+          <!-- 30-MINUTE READING -->
+          {% if latest_report.get('30_minutes') %}
+          <div class="failure-section">
+            <h3 style="margin-top: 0; font-size: 1rem; letter-spacing: 0.05em; text-transform: uppercase; color: rgba(255,255,255,0.72); margin-bottom: 18px;">30-Minute Reading</h3>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+              <!-- Latest Failure Column -->
+              {% if latest_report['30_minutes'].get('latest_failure') %}
+              <div style="background: rgba(234, 84, 85, 0.08); border: 1px solid rgba(234, 84, 85, 0.25); border-radius: 12px; padding: 18px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 0.9rem; color: #ff9ca5; text-transform: uppercase; letter-spacing: 0.05em;">Latest Failure</h4>
+                <div class="failure-meta" style="margin-bottom: 14px;">
+                  <span class="status-badge" style="display: block; margin-bottom: 8px; text-align: center;">{{ latest_report['30_minutes']['latest_failure']['status'] }}</span>
+                  <span class="time-text" style="justify-content: center;"><i class="mdi mdi-clock-outline"></i>{{ latest_report['30_minutes']['latest_failure']['time'] }}</span>
+                </div>
+                {% if latest_report['30_minutes']['latest_failure'].get('indicator') %}
+                <div class="indicator-box" style="margin-top: 14px;">
+                  <strong style="display:block; margin-bottom: 8px; color: #00E7FF; font-size: 0.85rem;">Indicator:</strong>
+                  <div class="indicator-value" style="font-size: 0.9rem; margin-bottom: 8px;">{{ latest_report['30_minutes']['latest_failure']['indicator'] }}</div>
+                  {% if latest_report['30_minutes']['latest_failure'].get('indicator_parsed') %}
+                  <ol style="margin: 0; padding-left: 18px; font-size: 0.8rem; color: rgba(255,255,255,0.7);">
+                    {% for ind in latest_report['30_minutes']['latest_failure']['indicator_parsed'] %}
+                    <li>{{ ind }}</li>
+                    {% endfor %}
+                  </ol>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% if latest_report['30_minutes']['latest_failure'].get('recommendation') %}
+                <div class="recommendation-box" style="margin-top: 14px; font-size: 0.85rem;">
+                  <strong style="display:block; margin-bottom: 6px;">Recommendation</strong>
+                  <div style="line-height: 1.5;">{{ latest_report['30_minutes']['latest_failure']['recommendation'] }}</div>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+
+              <!-- Latest Status Column -->
+              {% if latest_report['30_minutes'].get('latest_status') %}
+              <div style="background: rgba(115, 103, 240, 0.08); border: 1px solid rgba(115, 103, 240, 0.25); border-radius: 12px; padding: 18px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 0.9rem; color: #b8b2f3; text-transform: uppercase; letter-spacing: 0.05em;">Latest Status</h4>
+                <div class="failure-meta" style="margin-bottom: 14px;">
+                  <span class="status-badge" style="display: block; margin-bottom: 8px; text-align: center; {% if latest_report['30_minutes']['latest_status']['status'] == 'Running' %}background: rgba(40, 199, 111, 0.22); color: #7dffb2; border-color: rgba(40, 199, 111, 0.35);{% endif %}">{{ latest_report['30_minutes']['latest_status']['status'] }}</span>
+                  <span class="time-text" style="justify-content: center;"><i class="mdi mdi-clock-outline"></i>{{ latest_report['30_minutes']['latest_status']['time'] }}</span>
+                </div>
+                {% if latest_report['30_minutes']['latest_status'].get('indicator') %}
+                <div class="indicator-box" style="margin-top: 14px;">
+                  <strong style="display:block; margin-bottom: 8px; color: #00E7FF; font-size: 0.85rem;">Indicator:</strong>
+                  <div class="indicator-value" style="font-size: 0.9rem; margin-bottom: 8px;">{{ latest_report['30_minutes']['latest_status']['indicator'] }}</div>
+                  {% if latest_report['30_minutes']['latest_status'].get('indicator_parsed') %}
+                  <ol style="margin: 0; padding-left: 18px; font-size: 0.8rem; color: rgba(255,255,255,0.7);">
+                    {% for ind in latest_report['30_minutes']['latest_status']['indicator_parsed'] %}
+                    <li>{{ ind }}</li>
+                    {% endfor %}
+                  </ol>
+                  {% endif %}
+                </div>
+                {% endif %}
+                {% if latest_report['30_minutes']['latest_status'].get('recommendation') %}
+                <div class="recommendation-box" style="margin-top: 14px; font-size: 0.85rem;">
+                  <strong style="display:block; margin-bottom: 6px;">Recommendation</strong>
+                  <div style="line-height: 1.5;">{{ latest_report['30_minutes']['latest_status']['recommendation'] }}</div>
+                </div>
+                {% endif %}
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      </section>
+      {% endif %}
+
+      <section class="card" aria-label="Daily activity chart" style="margin-top: 28px;">
+        <div class="card-header">
+          <h2><i class="mdi mdi-chart-bar"></i> Daily Activity</h2>
+          <span style="font-size: 0.9rem; color: #9E9AB2;">Hover bars for details</span>
+        </div>
+        <div class="card-body">
+          <div id="dailyBar"></div>
+          <div id="dailyLegend"></div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid" aria-label="Status distributions" style="margin-top: 28px;">
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="mdi mdi-chart-pie"></i> Distribution (All Status)</h2>
+          </div>
+          <div class="card-body" style="display:flex; align-items:center; justify-content:center; min-height:280px;">
+            {% if pie_all_b64 %}
+              <img class="plot-img" src="{{ pie_all_b64 }}" alt="All statuses distribution">
+            {% else %}
+              <div style="text-align: center; color: #8a86a3;">
+                <i class="mdi mdi-information" style="font-size: 2.4rem; color: #7367F0;"></i>
+                <p>No data available</p>
+              </div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="mdi mdi-chart-pie"></i> Distribution (Table)</h2>
+          </div>
+          <div class="card-body" style="min-height:280px;">
+            {% if nonrun_distribution %}
+            <table class="nonrun-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Share</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for dist in nonrun_distribution %}
+                <tr>
+                  <td>{{ dist.status }}</td>
+                  <td>{{ '%.1f'|format(dist.percentage) }}%</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+            {% else %}
+            <div style="text-align: center; color: #8a86a3;">
+              <i class="mdi mdi-check-circle" style="font-size: 2.4rem; color: #28C76F;"></i>
+              <p>No non-running events</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid" aria-label="Trend plots" style="margin-top: 28px;">
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <h2><i class="mdi mdi-chart-line"></i> 30-minute Window Slopes</h2>
+          </div>
+          <div class="card-body">
+            <p style="margin-top:0; color: #A8AAAE;">Slopes for A, IP, DP, IT, MT, V, R (per-second slope within each 30-minute window).</p>
+            <img class="plot-img" src="{{ slope_plot }}" alt="Slope plot">
+          </div>
+        </div>
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <h2><i class="mdi mdi-chart-timeline-variant"></i> Virtual Rate</h2>
+          </div>
+          <div class="card-body">
+            <img class="plot-img" src="{{ rate_plot }}" alt="Virtual rate plot">
+          </div>
+        </div>
+      </section>
+
+      <section class="tables-section" aria-label="Prediction & events tables">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h2><i class="mdi mdi-table"></i> Failure Prediction Table (30-minute)</h2>
+              {% if pred_csv_path %}
+              <span style="font-size:0.85rem; color:#9E9AB2;"><i class="mdi mdi-file-document"></i> {{ pred_csv_path }}</span>
+              {% endif %}
+            </div>
+            {% if statuses or indicators %}
+            <div class="dropdown-filters">
+              {% if statuses %}
+              <label>
+                Status
+                <select id="status-filter" class="form-select">
+                  <option value="">All</option>
+                  {% for status in statuses %}
+                  <option value="{{ status }}">{{ status }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% endif %}
+              {% if indicators %}
+              <label>
+                Indicator
+                <select id="indicator-filter" class="form-select">
+                  <option value="">All</option>
+                  {% for indicator in indicators %}
+                  <option value="{{ indicator }}">{{ indicator }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% endif %}
+            </div>
+            {% endif %}
+          </div>
+          <div class="card-body">
+            {% if table_preview and table_columns %}
+            <div class="table-container">
+              <table id="predictionTable" class="display" style="width:100%">
+                <thead>
+                  <tr>
+                    {% for col in table_columns %}
+                    <th>{{ col }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in table_preview %}
+                  <tr class="{% if row['Status'] and row['Status'] != 'Running' %}status-critical{% endif %}">
+                    {% for col in table_columns %}
+                    <td>{{ row[col] }}</td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            <p style="color: #A8AAAE; font-size: 0.85rem; margin-top: 1rem;">
+              <i class="mdi mdi-information"></i> Showing up to 500 rows. Use filters for detail; exports include current page.
+            </p>
+            {% else %}
+            <div style="padding: 1.8rem; text-align: center; background: rgba(0, 207, 232, 0.08); border-radius: 12px;">
+              <i class="mdi mdi-information" style="font-size: 2rem; color: #00CFE8;"></i>
+              <p style="margin-top: 0.6rem; color: #4B465C;">No prediction rows to display</p>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2><i class="mdi mdi-calendar-clock"></i> Detected Events (3-hour)</h2>
+            {% if event_statuses %}
+            <div class="dropdown-filters">
+              <label>
+                Dominant Status
+                <select id="event-status-filter" class="form-select">
+                  <option value="">All</option>
+                  {% for status in event_statuses %}
+                  <option value="{{ status }}">{{ status }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            {% endif %}
+          </div>
+          <div class="card-body">
+            {% if group_summaries %}
+            <div class="table-container">
+              <table id="eventsTable" class="display" style="width:100%">
+                <thead>
+                  <tr>
+                    <th>Group Start</th>
+                    <th>Group End</th>
+                    <th>Non-Running Count</th>
+                    <th>Dominant Status</th>
+                    <th>Indicator</th>
+                    <th>Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for g in group_summaries %}
+                  <tr class="{% if g['dominant_status'] != 'Running' %}status-critical{% endif %}">
+                    <td>{{ g['group_start'] }}</td>
+                    <td>{{ g['group_end'] }}</td>
+                    <td>{{ g['non_running_count'] }}</td>
+                    <td>{{ g['dominant_status'] }}</td>
+                    <td style="font-family: 'Source Code Pro', monospace;">{{ g.get('indicator', '') }}</td>
+                    <td style="white-space: pre-line;">{{ g.get('recommendation', '') }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% else %}
+            <div style="padding: 1.2rem; background: rgba(40, 199, 111, 0.12); border-radius: 12px;">
+              <i class="mdi mdi-check-circle" style="color: #28C76F;"></i>
+              <span style="margin-left: 8px; color: #4B465C;">No non-running dominant events detected.</span>
+            </div>
+            {% endif %}
+          </div>
+        </div>
+      </section>
+
+      <footer class="footer-note">
+        <span>Generated {{ daily_bar_data.dates|length }} day{{ '' if daily_bar_data.dates|length == 1 else 's' }} of monitoring data for {{ well_name }}.</span>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Scripts -->
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script id="dailyPayload" type="application/json">{{ daily_bar_data | tojson | safe }}</script>
+  <script id="slopePayload" type="application/json">{{ slope_json | safe }}</script>
+
+  <script>
+    const colorMap = {
+      'Running': '#A8AAAE',
+      'Low PI': '#28C76F',
+      'Pump Wear': '#8B5A3C',
+      'Tubing Leak': '#00CFE8',
+      'Higher PI': '#7367F0',
+      'Increase in Frequency': '#CDDC39',
+      'Open Choke': '#78909C',
+      'Increase in Watercut': '#9C27B0',
+      'Sand Ingestion': '#E91E63',
+      'Closed Valve': '#2A3F5F',
+      'Electrical Downhole Problem': '#FF9F43',
+      'Shut-in': '#EA5455',
+      '100% Watercut': '#6A1B4D',
+      'Unidentified': '#6C757D'
+    };
+
+    (function renderDailyBar() {
+      const payloadText = document.getElementById('dailyPayload')?.textContent || '{}';
+      let payload;
+      try {
+        payload = JSON.parse(payloadText);
+      } catch (err) {
+        console.error('Cannot parse daily payload', err);
+        payload = { dates: [], counts: [], statuses: [] };
+      }
+
+      const dailyBarEl = document.getElementById('dailyBar');
+      if (!dailyBarEl) return;
+
+      if (!payload.dates || payload.dates.length === 0) {
+        dailyBarEl.innerHTML = '<div style="padding: 2rem; text-align: center; color: #9E9AB2;"><i class="mdi mdi-information" style="font-size: 2rem; color: #7367F0;"></i><p style="margin-top: 0.75rem;">No daily data available</p></div>';
+        return;
+      }
+
+      const trace = {
+        type: 'bar',
+        x: payload.dates,
+        y: payload.counts || new Array(payload.dates.length).fill(0),
+        marker: {
+          color: (payload.statuses || []).map(status => colorMap[status] || '#6C757D'),
+          line: { width: 0.6, color: '#fff' }
+        },
+        hoverinfo: 'text',
+        hovertext: payload.dates.map((d, idx) => `Date: ${d}<br>Records: ${payload.counts[idx]}<br>Status: ${payload.statuses[idx]}`)
+      };
+
+      const layout = {
+        margin: { l: 50, r: 20, t: 10, b: 80 },
+        xaxis: { type: 'category', showgrid: false, tickangle: -45, tickfont: { size: 10 } },
+        yaxis: { title: 'Records per day', showgrid: true, gridcolor: '#ECEBF1', zeroline: false },
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white',
+        bargap: 0.2
+      };
+
+      Plotly.newPlot(dailyBarEl, [trace], layout, { displayModeBar: true, responsive: true });
+
+      const legendEl = document.getElementById('dailyLegend');
+      if (legendEl) {
+        const uniqueStatuses = Array.from(new Set(payload.statuses || []));
+        legendEl.innerHTML = uniqueStatuses.map(status => {
+          const color = colorMap[status] || '#6C757D';
+          return `<span class="badge-custom" style="background:${color}; color:#fff; border-color:${color};">${status}</span>`;
+        }).join('');
+      }
+    })();
+
+    function initPredictionTable() {
+      const table = $('#predictionTable');
+      if (!table.length) return null;
+
+      const dt = table.DataTable({
+        dom: 'Bfrtip',
+        buttons: [
+          { extend: 'excelHtml5', text: '<i class="mdi mdi-microsoft-excel"></i> Excel', exportOptions: { columns: ':visible', modifier: { search: 'applied', page: 'current' } } },
+          { extend: 'csvHtml5', text: '<i class="mdi mdi-file-delimited"></i> CSV', exportOptions: { columns: ':visible', modifier: { search: 'applied', page: 'current' } } }
+        ],
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        language: {
+          search: '_INPUT_',
+          searchPlaceholder: 'Search records...'
+        },
+        order: []
+      });
+
+      const statusSelect = $('#status-filter');
+      const indicatorSelect = $('#indicator-filter');
+
+      const findColumnIndex = (headerText) => {
+        let index = -1;
+        table.find('thead th').each(function (idx) {
+          if ($(this).text().trim() === headerText && index === -1) {
+            index = idx;
+          }
+        });
+        return index;
+      };
+
+      const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      const statusIdx = findColumnIndex('Status');
+      if (statusIdx >= 0 && statusSelect.length) {
+        statusSelect.on('change', function () {
+          const val = $(this).val();
+          dt.column(statusIdx).search(val ? `^${escapeRegex(val)}$` : '', true, false).draw();
+        });
+      }
+
+      const indicatorIdx = findColumnIndex('Indicator');
+      if (indicatorIdx >= 0 && indicatorSelect.length) {
+        indicatorSelect.on('change', function () {
+          const val = $(this).val();
+          dt.column(indicatorIdx).search(val ? `^${escapeRegex(val)}$` : '', true, false).draw();
+        });
+      }
+
+      return dt;
+    }
+
+    function initEventsTable() {
+      const table = $('#eventsTable');
+      if (!table.length) return null;
+
+      const dt = table.DataTable({
+        dom: 'Bfrtip',
+        buttons: [
+          { extend: 'excelHtml5', text: '<i class="mdi mdi-microsoft-excel"></i> Excel', exportOptions: { columns: ':visible', modifier: { search: 'applied', page: 'current' } } },
+          { extend: 'csvHtml5', text: '<i class="mdi mdi-file-delimited"></i> CSV', exportOptions: { columns: ':visible', modifier: { search: 'applied', page: 'current' } } }
+        ],
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        language: {
+          search: '_INPUT_',
+          searchPlaceholder: 'Search records...'
+        },
+        order: []
+      });
+
+      const statusSelect = $('#event-status-filter');
+      if (statusSelect.length) {
+        const statusIdx = (() => {
+          let index = -1;
+          table.find('thead th').each(function (idx) {
+            if ($(this).text().trim() === 'Dominant Status' && index === -1) {
+              index = idx;
+            }
+          });
+          return index;
+        })();
+
+        if (statusIdx >= 0) {
+          const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          statusSelect.on('change', function () {
+            const val = $(this).val();
+            dt.column(statusIdx).search(val ? `^${escapeRegex(val)}$` : '', true, false).draw();
+          });
+        }
+      }
+
+      return dt;
+    }
+
+    $(document).ready(function () {
+      initPredictionTable();
+      initEventsTable();
+    });
+  </script>
+</body>
+</html>

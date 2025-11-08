@@ -1,0 +1,45 @@
+{
+  "3_hours": {
+    "latest_status": {
+      "time": "2025-07-31 21:00:00",
+      "status": "Running",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": " "
+    },
+    "latest_failure": {
+      "time": "2025-07-16 06:00:00",
+      "status": "Low PI",
+      "indicator": "A→ IP↓ DP↓ Q↑",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (↓): Decrease",
+        "Discharge Pressure (↓): Decrease",
+        "Rate (↑): Increase"
+      ],
+      "recommendation": "The Possibility Causes: 1. Well productivity less than pump design range 2. Restricted pump NOTIFICATIONS FOR ENGINEER! 1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head pressure and bring the pump production rate within design rate 2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
+    }
+  },
+  "30_minutes": {
+    "latest_status": {
+      "time": "2025-07-31 23:30:00",
+      "status": "Running",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": ""
+    },
+    "latest_failure": {
+      "time": "2025-07-16 08:00:00",
+      "status": "Open Choke",
+      "indicator": "A→ IP↓ DP↓ MT→ Q↑",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (↓): Decrease",
+        "Discharge Pressure (↓): Decrease",
+        "Motor Temperature (→): Stable",
+        "Rate (↑): Increase"
+      ],
+      "recommendation": "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, compare with historical well data"
+    }
+  }
+}

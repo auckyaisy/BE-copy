@@ -1,373 +1,764 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Well Analysis - Results</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Well Analysis Results - {{ well_name }}</title>
+  
+  <!-- Vuetify CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/vuetify@3.4.9/dist/vuetify.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/@mdi/font@7.3.67/css/materialdesignicons.min.css" rel="stylesheet">
+  
+  <!-- DataTables CSS -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.7/css/jquery.dataTables.min.css">
+  <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.dataTables.min.css">
+  
+  <!-- Plotly -->
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  
   <style>
-    img.plot { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 6px; }
-    .table-wrap { max-height: 480px; overflow: auto; }
-    .monospace { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .status-critical { background-color: #ffb3c1 !important; color: #5c0011 !important; font-weight: 600; }
-    .status-critical td { background-color: #ffb3c1 !important; border-color: #ff6f91 !important; color: #5c0011 !important; }
+    :root {
+      --primary-color: #7367F0;
+      --error-color: #EA5455;
+      --warning-color: #FF9F43;
+      --success-color: #28C76F;
+      --info-color: #00CFE8;
+      --bg-color: #F8F7FA;
+    }
+    
+    body {
+      font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background-color: var(--bg-color);
+      margin: 0;
+      padding: 0;
+    }
+    
+    .v-application {
+      background-color: var(--bg-color) !important;
+    }
+    
+    .page-header {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 1), rgba(115, 103, 240, 0.7));
+      padding: 2rem;
+      margin-bottom: 1.5rem;
+      border-radius: 8px;
+      color: white;
+    }
+    
+    .failure-card {
+      background: linear-gradient(136deg, rgba(33, 35, 49, 0.95), rgba(18, 19, 28, 0.92));
+      border: 1px solid rgba(115, 103, 240, 0.35);
+      border-radius: 12px;
+      padding: 1.75rem;
+      margin-bottom: 1.5rem;
+      color: #ffffff;
+      box-shadow: 0 16px 40px rgba(13, 15, 27, 0.32);
+    }
+    
+    .failure-card h2 {
+      color: #FFFFFF;
+      font-size: 1.55rem;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    
+    .failure-card h2 i {
+      font-size: 1.6rem;
+      color: #FF6B6B;
+    }
+    
+    .failure-card h3 {
+      color: rgba(255, 255, 255, 0.82);
+      font-size: 1.05rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.75rem;
+    }
+    
+    .failure-section {
+      padding: 1.4rem;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      margin-bottom: 1rem;
+    }
+    
+    .failure-meta {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.85rem;
+      margin-bottom: 1rem;
+    }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      background: rgba(234, 84, 85, 0.22);
+      color: #ff9ca5 !important;
+      padding: 6px 18px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.95rem;
+      letter-spacing: 0.01em;
+      border: 1px solid rgba(234, 84, 85, 0.4);
+      text-transform: uppercase;
+    }
+    
+    .time-text {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.8);
+      font-size: 0.95rem;
+    }
+    
+    .time-text i {
+      font-size: 1.1rem;
+      color: #00CFE8;
+    }
+    
+    .indicator-box {
+      background: rgba(0, 207, 232, 0.12);
+      border: 1px solid rgba(0, 207, 232, 0.3);
+      padding: 16px;
+      border-radius: 10px;
+      margin-bottom: 1rem;
+    }
+    
+    .indicator-box strong {
+      color: #00E7FF;
+      display: block;
+      margin-bottom: 10px;
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+    }
+    
+    .indicator-value {
+      font-family: 'Source Code Pro', 'Courier New', monospace;
+      font-size: 1rem;
+      color: rgba(255, 255, 255, 0.9);
+      margin-bottom: 0.75rem;
+      word-break: break-word;
+      letter-spacing: 0.05em;
+    }
+    
+    .indicator-legend {
+      margin: 0;
+      padding-left: 1.25rem;
+      color: rgba(255, 255, 255, 0.75);
+      font-size: 0.86rem;
+      display: grid;
+      gap: 0.3rem;
+    }
+    
+    .indicator-legend span {
+      font-weight: 700;
+      color: #53ECFF;
+    }
+    
+    .recommendation-box {
+      background: rgba(115, 103, 240, 0.16);
+      border: 1px solid rgba(115, 103, 240, 0.4);
+      padding: 16px;
+      border-radius: 10px;
+      margin-top: 1rem;
+      color: rgba(255, 255, 255, 0.85);
+    }
+    
+    .recommendation-box strong {
+      color: #9FA6FF;
+      display: block;
+      margin-bottom: 8px;
+      font-size: 0.95rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    
+    .nonrun-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, 0.92);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 14px rgba(33, 35, 49, 0.12);
+    }
+
+    .nonrun-table thead {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 0.16), rgba(115, 103, 240, 0.1));
+      color: #4B465C;
+    }
+
+    .nonrun-table th,
+    .nonrun-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(115, 103, 240, 0.12);
+      font-size: 0.95rem;
+    }
+
+    .nonrun-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    .nonrun-table tbody tr:hover {
+      background: rgba(115, 103, 240, 0.08);
+    }
+    
+    .card-custom {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+    
+    .card-header-custom {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 0.12), rgba(115, 103, 240, 0.08));
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid rgba(115, 103, 240, 0.2);
+    }
+    
+    .card-header-custom h5 {
+      margin: 0;
+      color: var(--primary-color);
+      font-weight: 600;
+      font-size: 1.1rem;
+    }
+    
+    .card-body-custom {
+      padding: 1.5rem;
+    }
+    
+    .table-container {
+      overflow-x: auto;
+    }
+    
+    .dataTables_wrapper {
+      padding: 0;
+    }
+    
+    .status-critical {
+      background-color: rgba(234, 84, 85, 0.1) !important;
+    }
+    
+    .status-critical td {
+      color: #EA5455 !important;
+      font-weight: 500;
+    }
+    
+    .plot-img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    }
+    
+    .btn-primary-custom {
+      background: linear-gradient(118deg, var(--primary-color), rgba(115, 103, 240, 0.8));
+      border: none;
+      color: white;
+      padding: 10px 24px;
+      border-radius: 6px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    
+    .btn-primary-custom:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(115, 103, 240, 0.4);
+    }
+    
+    .badge-custom {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 12px;
+      border-radius: 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin: 4px;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+
+    .quick-filter {
+      width: 100%;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid rgba(115, 103, 240, 0.35);
+      font-size: 0.8rem;
+      color: #4B465C;
+      background-color: #FFFFFF;
+    }
+
+    thead tr.filters th {
+      background: rgba(115, 103, 240, 0.06);
+      font-weight: 500;
+    }
+
+    thead tr.filters input::placeholder {
+      color: #A8AAAE;
+    }
+    
+    .dt-buttons {
+      margin-bottom: 1rem;
+    }
+    
+    .dt-button {
+      background: linear-gradient(118deg, var(--success-color), rgba(40, 199, 111, 0.8)) !important;
+      color: white !important;
+      border: none !important;
+      padding: 8px 16px !important;
+      border-radius: 6px !important;
+      margin-right: 8px !important;
+      font-weight: 500 !important;
+      cursor: pointer !important;
+    }
+    
+    .dt-button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(40, 199, 111, 0.3) !important;
+    }
+    
+    table.dataTable thead th {
+      background: linear-gradient(118deg, rgba(115, 103, 240, 0.08), rgba(115, 103, 240, 0.05));
+      color: var(--primary-color);
+      font-weight: 600;
+      padding: 12px 8px;
+    }
+    
+    table.dataTable tbody td {
+      padding: 10px 8px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    
+    table.dataTable tbody tr:hover {
+      background-color: rgba(115, 103, 240, 0.04);
+    }
+    
+    #dailyBar {
+      background: white;
+      border-radius: 6px;
+      padding: 10px;
+    }
   </style>
 </head>
-<body>
-  <div class="container py-4">
-    <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="mb-0">Results - {{ well_name }}</h1>
-      <a class="btn btn-secondary" href="{{ url_for('index') }}">← New Analysis</a>
-    </div>
 
-    {% if latest_failure %}
-      <div class="alert alert-danger shadow-sm" role="alert">
-        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2">
+<body>
+  <div id="app">
+    <div style="max-width: 1400px; margin: 0 auto; padding: 20px;">
+      
+      <!-- Header -->
+      <div class="page-header">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
-            <strong>Latest Failure:</strong>
-            <span class="badge text-bg-dark ms-2">{{ latest_failure.status }}</span>
-            <span class="ms-2">{{ latest_failure.timestamp }}</span>
+            <h1 style="margin: 0 0 8px 0; font-size: 2rem; font-weight: 600;">ESP Failure Prediction</h1>
+            <p style="margin: 0; opacity: 0.9; font-size: 1.1rem;">Well: {{ well_name }}</p>
           </div>
-          {% if latest_failure.recommendation %}
-            <div class="small">Recommendation: {{ latest_failure.recommendation }}</div>
+          <a href="{{ url_for('index') }}" class="btn-primary-custom" style="text-decoration: none; background: white; color: var(--primary-color);">
+            <i class="mdi mdi-upload"></i> New Analysis
+          </a>
+        </div>
+      </div>
+
+      <!-- Latest Failure Section -->
+      {% if latest_failure_30min or latest_failure_3hour %}
+      <div class="failure-card">
+        <h2><i class="mdi mdi-alert-decagram-outline"></i> Latest Failure</h2>
+        
+        {% if latest_failure_3hour %}
+        <div class="failure-section">
+          <h3>## 3-hours Reading:</h3>
+          <div class="failure-meta">
+            <span class="status-badge">{{ latest_failure_3hour.status }}</span>
+            <span class="time-text"><i class="mdi mdi-clock-outline"></i>{{ latest_failure_3hour.timestamp }}</span>
+          </div>
+          {% if latest_failure_3hour.indicator %}
+          <div class="indicator-box">
+            <strong>Indicator:</strong>
+            <div class="indicator-value">{{ latest_failure_3hour.indicator }}</div>
+            <ol class="indicator-legend">
+              <li><span>Ampere (↑)</span>: Increase</li>
+              <li><span>Discharge Pressure (↓)</span>: Decrease</li>
+              <li><span>Rate (↓)</span>: Decrease</li>
+            </ol>
+          </div>
+          {% endif %}
+          {% if latest_failure_3hour.recommendation %}
+          <div class="recommendation-box">
+            <strong>Recommendation:</strong>
+            <div style="color: #4B465C; line-height: 1.6;">{{ latest_failure_3hour.recommendation }}</div>
+          </div>
           {% endif %}
         </div>
-      </div>
-    {% endif %}
+        {% endif %}
 
-    <div class="row g-4">
-
-      <div class="col-12">
-        <div class="card h-100">
-          <div class="card-header d-flex justify-content-between align-items-center bg-light">
-            <h5 class="mb-0">Daily Activity</h5>
-            <span class="badge bg-secondary">Bar height = records per day, colored by dominant status</span>
+        {% if latest_failure_30min %}
+        <div class="failure-section">
+          <h3>## 30-minutes Reading:</h3>
+          <div class="failure-meta">
+            <span class="status-badge">{{ latest_failure_30min.status }}</span>
+            <span class="time-text"><i class="mdi mdi-clock-outline"></i>{{ latest_failure_30min.timestamp }}</span>
           </div>
-          <div class="card-body p-2">
-            <div id="dailyBar" style="width: 100%; height: 350px;"></div>
+          {% if latest_failure_30min.indicator %}
+          <div class="indicator-box">
+            <strong>Indicator:</strong>
+            <div class="indicator-value">{{ latest_failure_30min.indicator }}</div>
+            <ol class="indicator-legend">
+              <li><span>Ampere (↑)</span>: Increase</li>
+              <li><span>Discharge Pressure (↓)</span>: Decrease</li>
+              <li><span>Rate (↓)</span>: Decrease</li>
+            </ol>
           </div>
-          <div class="card-footer bg-white border-top pt-2 pb-3">
-            <small class="text-muted d-block text-center mb-2">
-              <i class="bi bi-info-circle"></i> Hover over bars for details. Color indicates the most common non-Running status for each day.
-            </small>
-            <div class="legend d-flex flex-wrap justify-content-center gap-2" id="dailyLegend"></div>
+          {% endif %}
+          {% if latest_failure_30min.recommendation %}
+          <div class="recommendation-box">
+            <strong>Recommendation:</strong>
+            <div style="color: #4B465C; line-height: 1.6;">{{ latest_failure_30min.recommendation }}</div>
           </div>
+          {% endif %}
         </div>
-      </div>
-
-      {% if summary_text %}
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <strong>Summary & Recommendations</strong>
-          </div>
-          <div class="card-body">
-            <pre class="mb-0" style="white-space: pre-wrap;">{{ summary_text }}</pre>
-          </div>
-        </div>
+        {% endif %}
       </div>
       {% endif %}
 
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <strong>Dominant Status Distribution</strong>
+      <!-- Daily Activity Chart -->
+      <div class="card-custom">
+        <div class="card-header-custom">
+          <h5><i class="mdi mdi-chart-bar"></i> Daily Activity</h5>
+        </div>
+        <div class="card-body-custom">
+          <div id="dailyBar" style="width: 100%; height: 400px;"></div>
+          <div style="text-align: center; margin-top: 1rem;">
+            <small style="color: #A8AAAE;">
+              <i class="mdi mdi-information"></i> Hover over bars for details. Color indicates the most common non-Running status.
+            </small>
           </div>
-          <div class="card-body">
-            <div class="row g-3">
-              <div class="col-md-6">
-                <h6>All statuses</h6>
-                {% if pie_all_b64 %}
-                  <img class="plot" src="{{ pie_all_b64 }}" alt="Dominant status distribution (all)">
-                {% else %}
-                  <div class="alert alert-info mb-0">No data to render pie chart.</div>
-                {% endif %}
+          <div id="dailyLegend" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 12px;"></div>
+        </div>
+      </div>
+
+      <!-- Pie Charts -->
+      <div class="card-custom">
+        <div class="card-header-custom">
+          <h5><i class="mdi mdi-chart-pie"></i> Dominant Status Distribution</h5>
+        </div>
+        <div class="card-body-custom">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2rem;">
+            <div>
+              <h6 style="color: #4B465C; font-weight: 600; margin-bottom: 1rem;">All Statuses</h6>
+              {% if pie_all_b64 %}
+                <img class="plot-img" src="{{ pie_all_b64 }}" alt="All statuses distribution">
+              {% else %}
+                <div style="padding: 2rem; text-align: center; background: rgba(0, 207, 232, 0.08); border-radius: 6px;">
+                  <i class="mdi mdi-information" style="font-size: 2rem; color: var(--info-color);"></i>
+                  <p style="margin: 8px 0 0 0; color: #4B465C;">No data available</p>
+                </div>
+              {% endif %}
+            </div>
+            <div>
+              <h6 style="color: #4B465C; font-weight: 600; margin-bottom: 1rem;">Non-Running Distribution</h6>
+              {% if nonrun_distribution %}
+              <table class="nonrun-table">
+                <thead>
+                  <tr>
+                    <th>Well Status</th>
+                    <th>%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for dist in nonrun_distribution %}
+                  <tr>
+                    <td>{{ dist.status }}</td>
+                    <td>{{ '%.1f'|format(dist.percentage) }}%</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% else %}
+              <div style="padding: 2rem; text-align: center; background: rgba(0, 207, 232, 0.08); border-radius: 6px;">
+                <i class="mdi mdi-information" style="font-size: 2rem; color: var(--info-color);"></i>
+                <p style="margin: 8px 0 0 0; color: #4B465C;">No non-Running events</p>
               </div>
-              <div class="col-md-6">
-                <h6>Non-Running only</h6>
-                {% if pie_nonrun_b64 %}
-                  <img class="plot" src="{{ pie_nonrun_b64 }}" alt="Dominant status distribution (non-running)">
-                {% else %}
-                  <div class="alert alert-info mb-0">No non-Running windows detected.</div>
-                {% endif %}
-              </div>
+              {% endif %}
             </div>
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="row g-4">
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <strong>30-minute Window Slopes</strong>
-          </div>
-          <div class="card-body">
-            <p class="text-muted mb-2">Slopes for A, IP, DP, IT, MT, V, R (unit: per-second slope from linear fit within each 30-minute window).</p>
-            <img class="plot" src="{{ slope_plot }}" alt="Slope plot">
-          </div>
+      <!-- Slope Plot -->
+      <div class="card-custom">
+        <div class="card-header-custom">
+          <h5><i class="mdi mdi-chart-line"></i> 30-minute Window Slopes</h5>
+        </div>
+        <div class="card-body-custom">
+          <p style="color: #A8AAAE; margin-bottom: 1rem;">
+            Slopes for A, IP, DP, IT, MT, V, R (unit: per-second slope from linear fit within each 30-minute window)
+          </p>
+          <img class="plot-img" src="{{ slope_plot }}" alt="Slope plot">
         </div>
       </div>
 
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header">
-            <strong>Virtual Rate (Predicted)</strong>
-          </div>
-          <div class="card-body">
-            <img class="plot" src="{{ rate_plot }}" alt="Virtual rate plot">
-          </div>
+      <!-- Virtual Rate Plot -->
+      <div class="card-custom">
+        <div class="card-header-custom">
+          <h5><i class="mdi mdi-chart-timeline-variant"></i> Virtual Rate (Predicted)</h5>
+        </div>
+        <div class="card-body-custom">
+          <img class="plot-img" src="{{ rate_plot }}" alt="Virtual rate plot">
         </div>
       </div>
 
-      
-
-
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <strong>Failure Prediction Table</strong>
+      <!-- 30-Minute Prediction Table -->
+      <div class="card-custom">
+        <div class="card-header-custom">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h5><i class="mdi mdi-table"></i> Failure Prediction Table 30-minutes Reading ({{ well_name }})</h5>
             {% if pred_csv_path %}
-              <span class="text-muted monospace small">Saved CSV: {{ pred_csv_path }}</span>
-            {% endif %}
-          </div>
-          <div class="card-body">
-            {% if table_preview and table_columns %}
-              <div class="table-wrap">
-                <table class="table table-sm table-striped table-hover">
-                  <thead class="table-light">
-                    <tr>
-                      {% for col in table_columns %}
-                        <th>{{ col }}</th>
-                      {% endfor %}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for row in table_preview %}
-                      <tr class="{% if row['Status'] and row['Status'] != 'Running' %}status-critical{% endif %}">
-                        {% for col in table_columns %}
-                          <td>{{ row[col] }}</td>
-                        {% endfor %}
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-              <p class="text-muted small">Showing up to 500 rows. Full file saved to <code>{{ pred_csv_path }}</code>.</p>
-            {% else %}
-              <div class="alert alert-info mb-0">No prediction rows to display.</div>
+            <span style="font-size: 0.85rem; color: #A8AAAE;">
+              <i class="mdi mdi-file-document"></i> {{ pred_csv_path }}
+            </span>
             {% endif %}
           </div>
         </div>
-      </div>
-
-      <div class="col-12">
-        <div class="card">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <strong>Detected Events (3-hour Dominant Status)</strong>
-            <span class="text-muted small">Non-"Running" groups are highlighted.</span>
-          </div>
-          <div class="card-body">
-            {% if detected_events %}
-              <div class="d-flex flex-wrap gap-2 mb-3">
-                {% for ev in detected_events %}
-                  <span class="badge text-bg-danger">
-                    {{ ev['date'] }} {{ ev['group_start'].split(' ')[1] }}–{{ ev['group_end'].split(' ')[1] }}: {{ ev['dominant_status'] }}
-                  </span>
+        <div class="card-body-custom">
+          {% if table_preview and table_columns %}
+          <div class="table-container">
+            <table id="predictionTable" class="display" style="width:100%">
+              <thead>
+                <tr>
+                  {% for col in table_columns %}
+                  <th>{{ col }}</th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in table_preview %}
+                <tr class="{% if row['Status'] and row['Status'] != 'Running' %}status-critical{% endif %}">
+                  {% for col in table_columns %}
+                  <td>{{ row[col] }}</td>
+                  {% endfor %}
+                </tr>
                 {% endfor %}
-              </div>
-            {% else %}
-              <div class="alert alert-success">No non-Running dominant events detected under the 3-hour grouping rule.</div>
-            {% endif %}
-
-            {% if group_summaries %}
-              <div class="table-wrap">
-                <table class="table table-sm table-hover">
-                  <thead class="table-light">
-                    <tr>
-                      <th>Date</th>
-                      <th>Group Start</th>
-                      <th>Group End</th>
-                      <th>Non-Running Count</th>
-                      <th>Dominant Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {% for g in group_summaries %}
-                      <tr class="{% if g['dominant_status'] != 'Running' %}status-critical{% endif %}">
-                        <td>{{ g['date'] }}</td>
-                        <td>{{ g['group_start'] }}</td>
-                        <td>{{ g['group_end'] }}</td>
-                        <td>{{ g['non_running_count'] }}</td>
-                        <td>{{ g['dominant_status'] }}</td>
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% endif %}
+              </tbody>
+            </table>
           </div>
+          <p style="color: #A8AAAE; font-size: 0.85rem; margin-top: 1rem;">
+            <i class="mdi mdi-information"></i> Showing up to 500 rows. Use search and quick filters above. Export limited to displayed rows on the current page.
+          </p>
+          {% else %}
+          <div style="padding: 2rem; text-align: center; background: rgba(0, 207, 232, 0.08); border-radius: 6px;">
+            <i class="mdi mdi-information" style="font-size: 2rem; color: var(--info-color);"></i>
+            <p style="margin: 8px 0 0 0; color: #4B465C;">No prediction rows to display</p>
+          </div>
+          {% endif %}
         </div>
       </div>
+
+      <!-- 3-Hour Events Table -->
+      <div class="card-custom">
+        <div class="card-header-custom">
+          <h5><i class="mdi mdi-calendar-clock"></i> Detected Events (3-hour Dominant Status)</h5>
+        </div>
+        <div class="card-body-custom">
+          {% if detected_events %}
+          <div style="margin-bottom: 1.5rem; display: flex; flex-wrap: wrap; gap: 8px;">
+            {% for ev in detected_events %}
+            <span class="badge-custom" style="background: rgba(234, 84, 85, 0.12); color: #B42318; border: 1px solid rgba(234, 84, 85, 0.25);">
+              <i class="mdi mdi-clock-alert" style="margin-right: 6px;"></i>{{ ev['group_start'].split(' ')[1] }}–{{ ev['group_end'].split(' ')[1] }}: {{ ev['dominant_status'] }}
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div style="padding: 1rem; background: rgba(40, 199, 111, 0.08); border-radius: 6px; margin-bottom: 1rem;">
+            <i class="mdi mdi-check-circle" style="color: var(--success-color);"></i>
+            <span style="color: #4B465C; margin-left: 8px;">No non-Running dominant events detected</span>
+          </div>
+          {% endif %}
+
+          {% if group_summaries %}
+          <div class="table-container">
+            <table id="eventsTable" class="display" style="width:100%">
+              <thead>
+                <tr>
+                  <th>Group Start</th>
+                  <th>Group End</th>
+                  <th>Non-Running Count</th>
+                  <th>Dominant Status</th>
+                  <th>Indicator</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for g in group_summaries %}
+                <tr class="{% if g['dominant_status'] != 'Running' %}status-critical{% endif %}">
+                  <td>{{ g['group_start'] }}</td>
+                  <td>{{ g['group_end'] }}</td>
+                  <td>{{ g['non_running_count'] }}</td>
+                  <td>{{ g['dominant_status'] }}</td>
+                  <td style="font-family: monospace;">{{ g.get('indicator', '') }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    
     </div>
   </div>
+</div>
+</div>
+
+  <!-- Scripts -->
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.7/js/jquery.dataTables.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+  <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
   <script id="dailyPayload" type="application/json">{{ daily_bar_data | tojson | safe }}</script>
-  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  
   <script>
+    // Daily Bar Chart
     (function(){
-      console.log('Initializing chart rendering...');
       try {
-        const dailyPayload = (function(){
-          try { return JSON.parse(document.getElementById('dailyPayload')?.textContent || '{}'); }
-          catch(_) { return {}; }
-        })() || { dates: [], counts: [], statuses: [] };
-
-        console.log('Daily bar data:', dailyPayload);
-
-        if (!Array.isArray(dailyPayload.dates)) dailyPayload.dates = [];
-        if (!Array.isArray(dailyPayload.counts)) dailyPayload.counts = [];
-        if (!Array.isArray(dailyPayload.statuses)) dailyPayload.statuses = [];
+        const dailyPayload = JSON.parse(document.getElementById('dailyPayload')?.textContent || '{}') || { dates: [], counts: [], statuses: [] };
 
         const colorMap = {
-          'Running': '#9aa0a6',
-          'Low PI': '#2ca02c',
-          'Pump Wear': '#8c564b',
-          'Tubing Leak': '#17becf',
-          'Higher PI': '#1f77b4',
-          'Increase in Frequency': '#bcbd22',
-          'Open Choke': '#7f7f7f',
-          'Increase in Watercut': '#9467bd',
-          'Sand Ingestion': '#e377c2',
-          'Closed Valve': '#2a3f5f',
-          'Electrical Downhole Problem': '#ff7f0e',
-          'Shut-in': '#E45756',
-          '100% Watercut': '#581845',
-          'Unidentified': '#6c757d'
+          'Running': '#A8AAAE',
+          'Low PI': '#28C76F',
+          'Pump Wear': '#8B5A3C',
+          'Tubing Leak': '#00CFE8',
+          'Higher PI': '#7367F0',
+          'Increase in Frequency': '#CDDC39',
+          'Open Choke': '#78909C',
+          'Increase in Watercut': '#9C27B0',
+          'Sand Ingestion': '#E91E63',
+          'Closed Valve': '#2A3F5F',
+          'Electrical Downhole Problem': '#FF9F43',
+          'Shut-in': '#EA5455',
+          '100% Watercut': '#6A1B4D',
+          'Unidentified': '#6C757D'
         };
 
-        console.log('Rendering daily bar chart with', dailyPayload.dates ? dailyPayload.dates.length : 0, 'days');
         const dailyBarEl = document.getElementById('dailyBar');
+        
+        if (dailyPayload && dailyPayload.dates && dailyPayload.dates.length > 0) {
+          const trace = {
+            type: 'bar',
+            x: dailyPayload.dates,
+            y: dailyPayload.counts || new Array(dailyPayload.dates.length).fill(0),
+            marker: {
+              color: (dailyPayload.statuses || []).map(s => colorMap[s] || '#6C757D'),
+              line: { width: 0.5, color: 'white' }
+            },
+            hoverinfo: 'text',
+            hovertext: dailyPayload.dates.map((date, i) => 
+              `Date: ${date}<br>Records: ${dailyPayload.counts[i]}<br>Status: ${dailyPayload.statuses[i]}` 
+            )
+          };
 
-        try {
-          console.log('Daily payload structure:', {
-            hasDates: !!dailyPayload.dates,
-            datesLength: dailyPayload.dates ? dailyPayload.dates.length : 0,
-            countsLength: dailyPayload.counts ? dailyPayload.counts.length : 0,
-            statusesLength: dailyPayload.statuses ? dailyPayload.statuses.length : 0,
-            sampleData: {
-              dates: dailyPayload.dates ? dailyPayload.dates.slice(0, 3) : [],
-              counts: dailyPayload.counts ? dailyPayload.counts.slice(0, 3) : [],
-              statuses: dailyPayload.statuses ? dailyPayload.statuses.slice(0, 3) : []
-            }
-          });
+          const layout = {
+            margin: {l: 50, r: 20, t: 10, b: 80},
+            xaxis: {
+              type: 'category',
+              showgrid: false,
+              tickangle: -45,
+              tickfont: { size: 10, family: 'Public Sans' }
+            },
+            yaxis: {
+              title: 'Records per day',
+              showgrid: true,
+              gridcolor: '#F0F0F0',
+              zeroline: false
+            },
+            plot_bgcolor: 'white',
+            paper_bgcolor: 'white',
+            bargap: 0.2,
+            hovermode: 'closest'
+          };
 
-          if (dailyPayload && dailyPayload.dates && dailyPayload.dates.length > 0) {
-            const validCounts = dailyPayload.counts && dailyPayload.counts.length === dailyPayload.dates.length
-              ? dailyPayload.counts
-              : new Array(dailyPayload.dates.length).fill(0);
-
-            const validStatuses = dailyPayload.statuses && dailyPayload.statuses.length === dailyPayload.dates.length
-              ? dailyPayload.statuses
-              : new Array(dailyPayload.dates.length).fill('Unknown');
-
-            const trace = {
-              type: 'bar',
-              x: dailyPayload.dates,
-              y: validCounts,
-              marker: {
-                color: validStatuses.map(s => colorMap[s] || '#6c757d'),
-                line: { width: 0.5, color: 'white' }
-              },
-              hoverinfo: 'text',
-              hovertext: dailyPayload.dates.map((date, i) => 
-                `Date: ${date}<br>Records: ${validCounts[i]}<br>Status: ${validStatuses[i] || 'Unknown'}` 
-              ),
-              hoverlabel: {
-                bgcolor: 'white',
-                font: { color: 'black' },
-                bordercolor: '#ddd'
-              }
-            };
-
-            const layoutDaily = {
-              margin: {l: 50, r: 20, t: 10, b: 80},
-              xaxis: {
-                type: 'category',
-                showgrid: false,
-                tickangle: -45,
-                tickfont: { size: 10 },
-                automargin: true
-              },
-              yaxis: {
-                title: 'Records per day',
-                showgrid: true,
-                gridcolor: '#f5f5f5',
-                zeroline: false,
-                fixedrange: true
-              },
-              plot_bgcolor: 'white',
-              paper_bgcolor: 'white',
-              bargap: 0.2,
-              hovermode: 'closest'
-            };
-
-            const config = {
-              displayModeBar: true,
-              responsive: true,
-              staticPlot: false
-            };
-
-            dailyBarEl.innerHTML = '';
-            Plotly.newPlot(dailyBarEl, [trace], layoutDaily, config)
-              .then(() => {
-                console.log('Daily bar chart rendered successfully');
-                // Build legend
-                try {
-                  const legendEl = document.getElementById('dailyLegend');
-                  if (!legendEl) return;
-                  const uniqueStatuses = Array.from(new Set(validStatuses));
-                  legendEl.innerHTML = uniqueStatuses.map(s => {
-                    const col = colorMap[s] || '#6c757d';
-                    return `<span class="badge me-2 mb-2" style="background-color:${col}">${s}</span>`;
-                  }).join('');
-                } catch (e) { console.warn('Legend build failed', e); }
-              })
-              .catch(err => {
-                console.error('Error rendering daily bar chart:', err);
-                dailyBarEl.innerHTML = `
-                  <div class="alert alert-warning">
-                    <h5>Error rendering daily activity chart</h5>
-                    <p>${err.message || 'Unknown error occurred'}</p>
-                    <p class="small">Check console for more details.</p>
-                  </div>`;
-              });
-          } else {
-            dailyBarEl.innerHTML = `
-              <div class="alert alert-info text-center py-4">
-                <h5>No daily data available</h5>
-                <p class="mb-0">The daily activity data could not be loaded or is empty.</p>
-              </div>`;
-            console.warn('No daily data available to render');
+          Plotly.newPlot(dailyBarEl, [trace], layout, {displayModeBar: true, responsive: true});
+          
+          // Build legend
+          const legendEl = document.getElementById('dailyLegend');
+          if (legendEl) {
+            const uniqueStatuses = Array.from(new Set(dailyPayload.statuses));
+            legendEl.innerHTML = uniqueStatuses.map(s => {
+              const col = colorMap[s] || '#6C757D';
+              return `<span class="badge-custom" style="background-color:${col}; color: white;">${s}</span>`;
+            }).join('');
           }
-        } catch (e) {
-          console.error('Error in daily chart rendering:', e);
-          dailyBarEl.innerHTML = `
-            <div class="alert alert-danger">
-              <h5>Error loading daily chart</h5>
-              <p>${e.message || 'An unexpected error occurred'}</p>
-              <p class="small">${e.stack || ''}</p>
-            </div>`;
+        } else {
+          dailyBarEl.innerHTML = '<div style="padding: 2rem; text-align: center;"><i class="mdi mdi-information" style="font-size: 2rem; color: var(--info-color);"></i><p style="margin: 8px 0 0 0;">No daily data available</p></div>';
         }
       } catch (e) {
-        console.error('Error in chart initialization:', e);
-        const firstChart = document.querySelector('#dailyBar');
-        if (firstChart) {
-          firstChart.innerHTML = `<div class="alert alert-danger">Error loading chart data: ${e.message}</div>`;
-        }
+        console.error('Error rendering daily chart:', e);
       }
     })();
+
+    function initTableWithQuickFilters(selector, buttonTexts) {
+      const $table = $(selector);
+      if (!$table.length) return null;
+
+      const $thead = $table.find('thead');
+      if (!$thead.find('tr.filters').length) {
+        const $filterRow = $thead.find('tr').first().clone(false).addClass('filters');
+        $filterRow.find('th').each(function () {
+          $(this).html('');
+        });
+        $filterRow.appendTo($thead);
+      }
+
+      return $table.DataTable({
+        dom: 'Bfrtip',
+        buttons: [
+          { extend: 'excelHtml5', text: buttonTexts.excel, exportOptions: { columns: ':visible', modifier: { search: 'applied', page: 'current' } } },
+          { extend: 'csvHtml5', text: buttonTexts.csv, exportOptions: { columns: ':visible', modifier: { search: 'applied', page: 'current' } } }
+        ],
+        pageLength: 25,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        orderCellsTop: true,
+        language: {
+          search: '_INPUT_',
+          searchPlaceholder: 'Search records...'
+        },
+        initComplete: function () {
+          const api = this.api();
+          api.columns().eq(0).each(function (colIdx) {
+            const cell = $table.find('thead tr.filters th').eq(colIdx);
+            const title = $(api.column(colIdx).header()).text().trim();
+            $('<input>', {
+              type: 'text',
+              class: 'quick-filter',
+              placeholder: `Filter ${title}`
+            })
+              .appendTo(cell.empty())
+              .on('keyup change', function () {
+                api.column(colIdx).search(this.value).draw();
+              });
+          });
+        }
+      });
+    }
+
+    $(document).ready(function() {
+      initTableWithQuickFilters('#predictionTable', {
+        excel: '<i class="mdi mdi-microsoft-excel"></i> Export Excel',
+        csv: '<i class="mdi mdi-file-delimited"></i> Export CSV'
+      });
+
+      initTableWithQuickFilters('#eventsTable', {
+        excel: '<i class="mdi mdi-microsoft-excel"></i> Export Excel',
+        csv: '<i class="mdi mdi-file-delimited"></i> Export CSV'
+      });
+    });
   </script>
 </body>
 </html>

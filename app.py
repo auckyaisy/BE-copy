@@ -22,6 +22,73 @@ UPLOAD_DIR = Path('data') / 'uploaded'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
+RECOMMENDATION_MAP = {
+    'Running': " ",
+    'Low PI': (
+        "The Possibility Causes: 1. Well productivity less than pump design range "
+        "2. Restricted pump NOTIFICATIONS FOR ENGINEER! 1. Analyze the fluid level and "
+        "Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head "
+        "pressure and bring the pump production rate within design rate 2. Check the possibility "
+        "of restricted pump! Pumping fluids through tubing when water sources are available."
+    ),
+    'Pump Wear': (
+        "NOTIFICATIONS FOR ENGINEER! 1. Check performance drop (>15–20% from initial installation) "
+        "2. Verify vibration increase (>20%) 3. Perform shut-in test with surface check valve "
+        "closed while pump is running"
+    ),
+    'Tubing Leak': (
+        "NOTIFICATIONS FOR ENGINEER! 1. Confirm by a pressure test at the tubing wellhead "
+        "2. Meanwhile, fill up the tubing and pressure up against RCV"
+    ),
+    'Higher PI': (
+        "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well productivity above pump design range "
+        "1. Analyze fluid level and BHP 2. Adjust wellhead pressure to maintain design rate "
+        "The Possibility Causes: Change in fluid characteristics 1. Analyze fluid level and BHP "
+        "2. Conduct fluid analysis for pump re-design reference"
+    ),
+    'Increase in Frequency': (
+        "NOTIFICATIONS FOR ENGINEER! 1. Compare discharge pressure with historical data "
+        "2. Reduce frequency via VSD"
+    ),
+    'Open Choke': (
+        "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, "
+        "compare with historical well data"
+    ),
+    'Increase in Watercut': (
+        "NOTIFICATIONS FOR ENGINEER! Adjust tubing wellhead pressure to bring production rate "
+        "within design limits"
+    ),
+    'Sand Ingestion': (
+        "NOTIFICATIONS FOR ENGINEER! 1. Check flow line and separator for evidence of sand, mud, "
+        "or debris 2. Design solid control system for next installation"
+    ),
+    'Closed Valve': (
+        "NOTIFICATIONS FOR ENGINEER! 1. Verify if the valve was deliberately partially closed by "
+        "Field Service Tech 2. Contact the Field Technician for on-site inspection"
+    ),
+    'Electrical Downhole Problem': (
+        "NOTIFICATIONS FOR ENGINEER! 1. Verify surface equipment (VSD, transformer, junction box) "
+        "to isolate downhole issue 2. Perform VSD soft shutdown to prevent reverse current damage "
+        "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
+    ),
+    'Shut-in': (
+        "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency "
+        "are expected to be zero."
+    ),
+    '100% Watercut': (
+        "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well producing 100% water—possible water "
+        "breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water "
+        "source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
+    ),
+    'Start-up Phase': (
+        "Start-up Phase after extended data gap: 1. Conduct no-load test before commissioning to ensure "
+        "proper drive operation 2. Verify drive parameters, transformer taps, and gauge units are correctly "
+        "set 3. Test both rotations; select the one with lower amperage (correct pump rotation) "
+        "4. Monitor WHP—if no buildup, briefly choke the well to initiate flow and confirm ΔP"
+    ),
+}
+
+
 def fig_to_base64(fig) -> str:
     buf = io.BytesIO()
     fig.savefig(buf, format='png', bbox_inches='tight', dpi=150)
@@ -44,6 +111,27 @@ def _sync_prod_data(prod_path: Path) -> None:
         shutil.copy(prod_path, dest)
     except Exception as exc:
         print(f"[sync_prod_data] warning: {exc}")
+
+
+def _calculate_indicator(slope_val):
+    """Calculate indicator arrow based on slope value."""
+    if pd.isna(slope_val) or slope_val == 0:
+        return ""
+    elif slope_val > 0:
+        return "↑"
+    else:
+        return "↓"
+
+
+def _build_indicator_string(row, columns=['A', 'IP', 'DP', 'R']):
+    """Build indicator string like 'A↓ IP↑ DP↓ R↓' from slope values."""
+    indicators = []
+    for col in columns:
+        if col in row and pd.notna(row[col]):
+            arrow = _calculate_indicator(row[col])
+            if arrow:
+                indicators.append(f"{col}{arrow}")
+    return " ".join(indicators) if indicators else ""
 
 
 def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: Optional[str] = None, zoom_end: Optional[str] = None):
@@ -86,14 +174,42 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     pred_csv = OUTPUT_DIR / f"{well_name}_failure_prediction_30min.csv"
     pred_df = None
     latest_failure = None
+    latest_failure_30min = None
+    latest_failure_3hour = None
+    latest_report = None
+    
+    # Load latest_report.json if exists (for new UI format)
+    latest_report_json = OUTPUT_DIR / f"{well_name}_latest_report.json"
+    if latest_report_json.exists():
+        try:
+            with open(latest_report_json, 'r', encoding='utf-8') as f:
+                latest_report = json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load latest_report.json: {e}")
+    
     if pred_csv.exists():
         pred_df = pd.read_csv(pred_csv)
+        
+        # Merge slopes data to add Indicator column for 30-min readings
+        if pred_df is not None and not pred_df.empty and not slopes_df.empty:
+            # Merge on Window_Start_Time
+            pred_df['Window_Start_Time'] = pd.to_datetime(pred_df['Window_Start_Time'], errors='coerce')
+            slopes_df['Window_Start_Time'] = pd.to_datetime(slopes_df['Window_Start_Time'], errors='coerce')
+            pred_df = pred_df.merge(
+                slopes_df[['Window_Start_Time', 'A', 'IP', 'DP', 'R']], 
+                on='Window_Start_Time', 
+                how='left',
+                suffixes=('', '_slope')
+            )
+            # Calculate Indicator for each row
+            pred_df['Indicator'] = pred_df.apply(lambda row: _build_indicator_string(row, ['A', 'IP', 'DP', 'R']), axis=1)
 
     # Build 3-hour grouped summaries according to rules
     group_summaries = []
     detected_events = []
     pie_all_b64 = None
     pie_nonrun_b64 = None
+    nonrun_distribution = []
     summary_text = None
     zoom_links = []
     events_plot = None
@@ -108,11 +224,14 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         non_running = pdf_valid[pdf_valid['Status'].str.lower() != 'running']
         if not non_running.empty:
             latest = non_running.sort_values('Window_Start_Time').iloc[-1]
-            latest_failure = {
+            latest_failure_30min = {
                 'timestamp': latest['Window_Start_Time'].strftime('%Y-%m-%d %H:%M:%S'),
                 'status': latest['Status'],
                 'recommendation': str(latest.get('Recommendation', '') or '').strip(),
+                'indicator': str(latest.get('Indicator', '') or '').strip(),
             }
+            # Keep old format for backward compatibility
+            latest_failure = latest_failure_30min
         pdf['date'] = pdf['Window_Start_Time'].dt.normalize()
         pdf['group_start'] = pdf['Window_Start_Time'].dt.floor('3H')
         pdf['group_end'] = pdf['group_start'] + pd.Timedelta(hours=3)
@@ -148,27 +267,58 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         for (d, gs, ge), g in groups:
             dominant = pick_dominant_status(g)
             non_run_count = (g['Status'] != 'Running').sum()
+            
+            # Calculate aggregated indicator for 3-hour window
+            # Check for each parameter if it has mixed directions
+            agg_indicator_parts = []
+            for param in ['A', 'IP', 'DP', 'R']:
+                if param in g.columns:
+                    slopes = g[param].dropna()
+                    if len(slopes) > 0:
+                        has_up = (slopes > 0).any()
+                        has_down = (slopes < 0).any()
+                        if has_up and has_down:
+                            agg_indicator_parts.append(f"{param}↑↓")
+                        elif has_up:
+                            agg_indicator_parts.append(f"{param}↑")
+                        elif has_down:
+                            agg_indicator_parts.append(f"{param}↓")
+            agg_indicator = " ".join(agg_indicator_parts)
+            
             dom_rows.append({
                 'date': d,
                 'group_start': gs,
                 'group_end': ge,
                 'Dominant Status': dominant,
                 'non_running_count': int(non_run_count),
+                'indicator': agg_indicator,
             })
         result_df = pd.DataFrame(dom_rows)
 
         # Summaries for rendering
         for _, r in result_df.iterrows():
+            dominant_status = r['Dominant Status']
+            recommendation = RECOMMENDATION_MAP.get(dominant_status, " ")
             summary = {
                 'date': pd.to_datetime(r['date']).strftime('%Y-%m-%d'),
                 'group_start': pd.to_datetime(r['group_start']).strftime('%Y-%m-%d %H:%M:%S'),
                 'group_end': pd.to_datetime(r['group_end']).strftime('%Y-%m-%d %H:%M:%S'),
                 'non_running_count': int(r['non_running_count']),
-                'dominant_status': r['Dominant Status'],
+                'dominant_status': dominant_status,
+                'indicator': r.get('indicator', ''),
+                'recommendation': recommendation,
             }
             group_summaries.append(summary)
             if r['Dominant Status'] != 'Running':
                 detected_events.append(summary)
+                # Store latest 3-hour failure
+                if latest_failure_3hour is None or pd.to_datetime(summary['group_start']) > pd.to_datetime(latest_failure_3hour['timestamp']):
+                    latest_failure_3hour = {
+                        'timestamp': summary['group_start'],
+                        'status': summary['dominant_status'],
+                        'recommendation': summary.get('recommendation', ''),
+                        'indicator': summary['indicator'],
+                    }
 
         # Zoom links for non-Running bands
         for ev in detected_events:
@@ -180,20 +330,54 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                 'end': ev['group_end'],
             })
 
-        # Pie charts
+        # Pie charts with improved styling
         try:
             status_counts = result_df['Dominant Status'].value_counts()
             if not status_counts.empty:
-                figp1, axp1 = plt.subplots(figsize=(6, 6))
-                axp1.pie(status_counts, labels=status_counts.index, autopct='%1.1f%%', startangle=140)
-                axp1.set_title('Distribution of Dominant Status (per 3-hour window)')
+                figp1, axp1 = plt.subplots(figsize=(7, 7))
+                colors = plt.cm.Set3(range(len(status_counts)))
+                wedges, texts, autotexts = axp1.pie(
+                    status_counts,
+                    labels=status_counts.index,
+                    autopct='%1.1f%%',
+                    startangle=140,
+                    colors=colors,
+                    textprops={'fontsize': 10, 'weight': 'normal'}
+                )
+                for autotext in autotexts:
+                    autotext.set_color('black')
+                    autotext.set_fontsize(10)
+                    autotext.set_weight('bold')
+                axp1.set_title('Distribution of Dominant Status (per 3-hour window)', fontsize=12, pad=20)
                 axp1.axis('equal')
                 pie_all_b64 = fig_to_base64(figp1)
+            if not status_counts.empty:
+                total_all = status_counts.sum()
+                if total_all > 0:
+                    nonrun_distribution = [
+                        {
+                            'status': status,
+                            'percentage': round((count / total_all) * 100, 1),
+                        }
+                        for status, count in status_counts.items()
+                    ]
             status_counts_non = result_df[result_df['Dominant Status'] != 'Running']['Dominant Status'].value_counts()
             if not status_counts_non.empty:
-                figp2, axp2 = plt.subplots(figsize=(6, 6))
-                axp2.pie(status_counts_non, labels=status_counts_non.index, autopct='%1.1f%%', startangle=140)
-                axp2.set_title('Dominant Status Distribution (Non-Running Only)')
+                figp2, axp2 = plt.subplots(figsize=(7, 7))
+                colors2 = plt.cm.Set3(range(len(status_counts_non)))
+                wedges2, texts2, autotexts2 = axp2.pie(
+                    status_counts_non,
+                    labels=status_counts_non.index,
+                    autopct='%1.1f%%',
+                    startangle=140,
+                    colors=colors2,
+                    textprops={'fontsize': 10, 'weight': 'normal'}
+                )
+                for autotext in autotexts2:
+                    autotext.set_color('black')
+                    autotext.set_fontsize(10)
+                    autotext.set_weight('bold')
+                axp2.set_title('Dominant Status Distribution (Non-Running Only)', fontsize=12, pad=20)
                 axp2.axis('equal')
                 pie_nonrun_b64 = fig_to_base64(figp2)
         except Exception:
@@ -317,14 +501,39 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         table_df = pred_df.copy()
         if 'Reason' in table_df.columns:
             table_df = table_df.drop(columns=['Reason'])
+        # Remove slope columns (A, IP, DP, R) from display but keep Indicator
+        for col in ['A', 'IP', 'DP', 'R']:
+            if col in table_df.columns:
+                table_df = table_df.drop(columns=[col])
+        # Remove Prediction column if exists
+        if 'Prediction' in table_df.columns:
+            table_df = table_df.drop(columns=['Prediction'])
         table_preview = table_df.head(500).to_dict(orient='records')
         table_columns = list(table_df.columns)
+        status_options = sorted({
+            str(row.get('Status', '')).strip()
+            for row in table_preview
+            if str(row.get('Status', '')).strip()
+        })
+        indicator_options = sorted({
+            str(row.get('Indicator', '')).strip()
+            for row in table_preview
+            if str(row.get('Indicator', '')).strip()
+        })
     else:
         table_preview = []
         table_columns = []
+        status_options = []
+        indicator_options = []
+
+    event_status_options = sorted({
+        summary['dominant_status']
+        for summary in group_summaries
+        if summary.get('dominant_status')
+    }) if group_summaries else []
 
     return render_template(
-        'results.html',
+        'dbfieldmgm.web.id/dblpo_results.html',
         well_name=well_name,
         slope_plot=slope_plot,
         rate_plot=rate_plot,
@@ -340,7 +549,14 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         zoom_links=zoom_links,
         slope_json=json.dumps(slope_data or {}),
         latest_failure=latest_failure,
+        latest_failure_30min=latest_failure_30min,
+        latest_failure_3hour=latest_failure_3hour,
+        latest_report=latest_report,  # New: side-by-side comparison data
         daily_bar_data=daily_bar_data,
+        nonrun_distribution=nonrun_distribution,
+        statuses=status_options,
+        indicators=indicator_options,
+        event_statuses=event_status_options,
     )
 
 

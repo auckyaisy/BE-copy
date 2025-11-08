@@ -1,0 +1,33 @@
+{
+  "3_hours": {
+    "latest_status": {
+      "time": "2025-07-31 21:00:00",
+      "status": "Running",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": " "
+    }
+  },
+  "30_minutes": {
+    "latest_status": {
+      "time": "2025-07-31 23:30:00",
+      "status": "Running",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": ""
+    },
+    "latest_failure": {
+      "time": "2025-07-22 15:30:00",
+      "status": "Open Choke",
+      "indicator": "A→ IP→ DP↓ MT→ Q↑",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (→): Stable",
+        "Discharge Pressure (↓): Decrease",
+        "Motor Temperature (→): Stable",
+        "Rate (↑): Increase"
+      ],
+      "recommendation": "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, compare with historical well data"
+    }
+  }
+}

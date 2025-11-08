@@ -1,0 +1,49 @@
+2025-10-29 15:24:29,821 - __main__ - INFO - Starting analysis for well: SKW-35
+2025-10-29 15:24:29,822 - src.pipeline - INFO - Loading data from Test Web/Data Sensor/SKW-35.csv
+2025-10-29 15:24:30,822 - src.pipeline - INFO - Loaded Watercut data with 167 rows from Test Web/Data Produksi/SKW-35.csv
+2025-10-29 15:24:30,833 - src.pipeline - INFO - 1/4 - Running discharge pressure prediction...
+2025-10-29 15:24:30,856 - src.pipeline - INFO - Loading discharge_pressure model from /Users/m/Downloads/mba)sil/BE-copy/models/knn_dp_SKW.joblib
+2025-10-29 15:24:32,459 - src.pipeline - INFO - Making predictions with discharge_pressure
+2025-10-29 15:24:32,459 - src.pipeline - WARNING - Input contains NaN values. Imputing with column means.
+2025-10-29 15:24:32,818 - src.pipeline - INFO - DP column entirely NaN → overwriting with model predictions to mirror notebook behavior
+2025-10-29 15:24:34,175 - src.pipeline - INFO - Exported notebook-style CSV to: /Users/m/Downloads/mba)sil/BE-copy/SKW Final.csv
+2025-10-29 15:24:34,807 - src.pipeline - INFO - 2/4 - Virtual rate handling...
+2025-10-29 15:24:34,828 - src.pipeline - INFO - Dropped NaN rows before VR prediction: 70589 -> 70368 rows
+2025-10-29 15:24:34,829 - src.pipeline - INFO - Running Virtual Rate prediction (notebook behavior)
+2025-10-29 15:24:34,829 - src.pipeline - INFO - Loading virtual_rate model from /Users/m/Downloads/mba)sil/BE-copy/models/knn_model_r.joblib
+2025-10-29 15:24:34,927 - src.pipeline - INFO - Making predictions with virtual_rate
+2025-10-29 15:24:35,063 - src.pipeline - INFO - Applying zero rule: if Amps==0 and Freq==0 then VR=0
+2025-10-29 15:24:36,335 - src.pipeline - INFO - Exported notebook-style CSV to: /Users/m/Downloads/mba)sil/BE-copy/SKW_final_w_Pd.csv
+2025-10-29 15:24:37,158 - src.pipeline - INFO - 3/4 - Building 30-minute resampled dataset (df_all)...
+2025-10-29 15:24:37,317 - src.pipeline - INFO - Saved df_all to: /Users/m/Downloads/mba)sil/BE-copy/df_all.csv
+2025-10-29 15:24:37,432 - src.pipeline - INFO - 4/4 - Computing 30-minute window slopes...
+2025-10-29 15:24:37,672 - src.pipeline - INFO - Saved slopes_df_30menit to: /Users/m/Downloads/mba)sil/BE-copy/slopes_df_30menit.csv
+2025-10-29 15:24:37,745 - src.pipeline - INFO - Saved X_predict_30menit to: /Users/m/Downloads/mba)sil/BE-copy/X_predict_30menit.csv
+2025-10-29 15:24:37,860 - src.pipeline - INFO - Loading failure_prediction model from /Users/m/Downloads/mba)sil/BE-copy/models/knn_tanpa SMOTE_model.pkl
+2025-10-29 15:24:37,874 - src.pipeline - INFO - Making predictions with failure_prediction
+2025-10-29 15:24:37,950 - src.pipeline - INFO - Watercut=100% detected for 192 windows
+2025-10-29 15:24:40,849 - src.pipeline - INFO - Override counts (masks) - Watercut=100%: 192, Shut-in: 1257, EDP: 0
+2025-10-29 15:24:40,909 - src.pipeline - INFO - Gap detected: 37.0h between 2025-04-08 19:00:00 and 2025-04-10 08:00:00
+2025-10-29 15:24:40,910 - src.pipeline - INFO - Found Shut-in, marking Start-up Phase from idx 3181 to 3321
+2025-10-29 15:24:40,969 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-15 23:30:00 and 2025-07-16 05:30:00
+2025-10-29 15:24:40,970 - src.pipeline - INFO - Found Shut-in, marking Start-up Phase from idx 7808 to 7860
+2025-10-29 15:24:40,971 - src.pipeline - INFO - Gap detected: 90.5h between 2025-07-17 07:30:00 and 2025-07-21 02:00:00
+2025-10-29 15:24:40,971 - src.pipeline - INFO - Found Shut-in, marking Start-up Phase from idx 7861 to 7862
+2025-10-29 15:24:40,971 - src.pipeline - INFO - Gap detected: 173.5h between 2025-07-21 03:00:00 and 2025-07-28 08:30:00
+2025-10-29 15:24:40,972 - src.pipeline - INFO - Found Shut-in, marking Start-up Phase from idx 7863 to 8007
+2025-10-29 15:24:40,985 - src.pipeline - WARNING - Could not save prediction_with_features_30menit.csv: You are trying to merge on object and datetime64[ns] columns for key 'Window_Start_Time'. If you wish to proceed you should use pd.concat
+2025-10-29 15:24:40,986 - src.pipeline - INFO - Saving results to directory: test_output/SKW-35
+2025-10-29 15:24:40,986 - src.pipeline - INFO - Saving discharge_pressure predictions to: test_output/SKW-35/SKW-35_discharge_pressure_predictions.csv
+2025-10-29 15:24:40,986 - src.pipeline - WARNING - Timestamp length does not match predictions; saving without timestamp
+2025-10-29 15:24:41,053 - src.pipeline - INFO - Successfully saved discharge_pressure predictions to test_output/SKW-35/SKW-35_discharge_pressure_predictions.csv (Size: 705499 bytes)
+2025-10-29 15:24:41,053 - src.pipeline - INFO - Saving virtual_rate predictions to: test_output/SKW-35/SKW-35_virtual_rate_predictions.csv
+2025-10-29 15:24:41,174 - src.pipeline - INFO - Successfully saved virtual_rate predictions to test_output/SKW-35/SKW-35_virtual_rate_predictions.csv (Size: 2011671 bytes)
+2025-10-29 15:24:41,174 - src.pipeline - INFO - Skipping raw save for failure_prediction (handled by _save_failure_results)
+2025-10-29 15:24:41,201 - src.pipeline - INFO - Saved final failure results to: test_output/SKW-35/SKW-35_failure_prediction_30min.csv
+2025-10-29 15:24:41,224 - src.pipeline - INFO - Saved notebook-style 30-minute predictions to: /Users/m/Downloads/mba)sil/BE-copy/prediction_results_30menit.csv
+2025-10-29 15:24:41,241 - src.pipeline - INFO - Saved notebook-style predictions to well output: test_output/SKW-35/prediction_results_30menit.csv
+2025-10-29 15:24:41,507 - src.pipeline - INFO - Saved 3-hour aggregated results to: test_output/SKW-35/result_df_3 jam.csv
+2025-10-29 15:24:41,508 - src.pipeline - INFO - Saved 3-hour aggregated results to project root: /Users/m/Downloads/mba)sil/BE-copy/result_df_3 jam.csv
+2025-10-29 15:24:41,509 - src.pipeline - INFO - Pipeline finished with template-aligned outputs.
+2025-10-29 15:24:42,596 - src.pipeline - INFO - Saved plots to: test_output/SKW-35/SKW-35_discharge_pressure_plot.png, test_output/SKW-35/SKW-35_virtual_rate_plot.png, test_output/SKW-35/SKW-35_overview_plot.png
+2025-10-29 15:24:42,597 - __main__ - INFO - Analysis completed successfully!

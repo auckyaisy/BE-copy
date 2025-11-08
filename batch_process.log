@@ -1,0 +1,170 @@
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+Traceback (most recent call last):
+  File "/Users/oki/Documents/BE-copy/batch_process_wells.py", line 76, in main
+    pipeline = WellAnalysisPipeline(
+TypeError: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+BATCH PROCESSING: 12 WELLS
+================================================================================
+
+
+================================================================================
+Processing: SKW-02
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-02/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-02.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-02
+❌ ERROR processing SKW-02: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-05
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-05/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-05.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-05
+❌ ERROR processing SKW-05: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-07
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-07/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-07.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-07
+❌ ERROR processing SKW-07: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-12
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-12/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-12.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-12
+❌ ERROR processing SKW-12: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-14
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-14/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-14.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-14
+❌ ERROR processing SKW-14: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-15
+================================================================================
+❌ SKIP: Sensor file not found: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-15/SKW Final.csv
+
+================================================================================
+Processing: SKW-18
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-18/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-18.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-18
+❌ ERROR processing SKW-18: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-29
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-29/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-29.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-29
+❌ ERROR processing SKW-29: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-30
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-30/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-30.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-30
+❌ ERROR processing SKW-30: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-33
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-33/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-33.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-33
+❌ ERROR processing SKW-33: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-35
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-35/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-35.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-35
+❌ ERROR processing SKW-35: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+Processing: SKW-36
+================================================================================
+📁 Sensor data: /Users/oki/Documents/BE-copy/Test Web/Hasil Bacaan Notebook/SKW-36/SKW Final.csv
+📁 Production data: /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-36.csv
+📁 Output dir: /Users/oki/Documents/BE-copy/test_output/SKW-36
+❌ ERROR processing SKW-36: __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+
+================================================================================
+BATCH PROCESSING SUMMARY
+================================================================================
+
+Total Wells: 12
+✅ Success: 0
+❌ Failed: 12
+
+Well            Status     Duration     Reason/Output
+--------------------------------------------------------------------------------
+SKW-02          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-05          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-07          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-12          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-14          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-15          FAILED     -            Sensor file not found
+SKW-18          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-29          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-30          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-33          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-35          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+SKW-36          ERROR      -            __init__() got an unexpected keyword argument 'sensor_csv_path'
+
+================================================================================
+
+📄 Summary saved to: /Users/oki/Documents/BE-copy/test_output/batch_processing_summary.csv
