@@ -93,10 +93,29 @@ def _dataset_paths(well_name: str) -> dict:
     }
 
 
+def _find_dataset_file(well_name: str, dataset: str) -> Path:
+    """Return existing dataset path, falling back to legacy flat files when needed."""
+    canonical = _dataset_paths(well_name).get(dataset)
+    if canonical and canonical.exists():
+        return canonical
+
+    fallback_map = {
+        '30min': OUTPUT_DIR / f"{well_name}_failure_prediction_30min.csv",
+        '30min_indicator': OUTPUT_DIR / f"{well_name}_indicator_30min.csv",
+        '3hour': OUTPUT_DIR / "result_df_3 jam.csv",
+        '3hour_indicator': OUTPUT_DIR / "result_df_3jam_with_indicator.csv",
+    }
+    fallback = fallback_map.get(dataset)
+    if fallback and fallback.exists():
+        return fallback
+
+    return canonical
+
+
 def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: Optional[str] = None, zoom_end: Optional[str] = None):
     """Shared renderer for results to support both POST and GET flows."""
     out_dir = _well_output_dir(well_name)
-    dataset_files = _dataset_paths(well_name)
+    dataset_files = {key: _find_dataset_file(well_name, key) for key in ['30min', '30min_indicator', '3hour', '3hour_indicator']}
 
     # Build slopes and resampled dataset for visualization
     slopes_df = pipeline._compute_window_slopes_30min(pipeline.data)
@@ -133,7 +152,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     rate_plot = fig_to_base64(fig2)
 
     # Load failure prediction table from saved CSV (per well)
-    pred_csv = dataset_files['30min']
+    pred_csv = dataset_files['30min'] or _dataset_paths(well_name)['30min']
     pred_df = None
     pdf = pd.DataFrame()
     aggregated_df = None
@@ -156,7 +175,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         pred_df = pd.read_csv(pred_csv)
         pdf = pred_df.copy()
 
-        aggregated_path = dataset_files['3hour_indicator']
+        aggregated_path = dataset_files['3hour_indicator'] or _dataset_paths(well_name)['3hour_indicator']
         if aggregated_path.exists():
             try:
                 aggregated_df = pd.read_csv(aggregated_path)
@@ -534,8 +553,9 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     }) if group_summaries else []
 
     download_links = {}
-    for key, path in dataset_files.items():
-        if path.exists():
+    for key in ['30min', '30min_indicator', '3hour', '3hour_indicator']:
+        path = dataset_files.get(key)
+        if path and path.exists():
             download_links[key] = {
                 'csv': url_for('download_dataset', well=well_name, dataset=key, fmt='csv'),
                 'excel': url_for('download_dataset', well=well_name, dataset=key, fmt='excel'),
@@ -571,7 +591,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
 
 
 def _build_result_df_for_events(pipeline: WellAnalysisPipeline, well_name: str) -> Optional[pd.DataFrame]:
-    pred_csv = _dataset_paths(well_name)['30min']
+    pred_csv = _find_dataset_file(well_name, '30min') or _dataset_paths(well_name)['30min']
     if not pred_csv.exists():
         return None
     pred_df = pd.read_csv(pred_csv)
@@ -795,12 +815,11 @@ def download_dataset(well: str, dataset: str, fmt: str):
     if fmt not in allowed_fmt:
         abort(404)
 
-    dataset_files = _dataset_paths(well)
-    if dataset not in dataset_files:
+    if dataset not in {'30min', '30min_indicator', '3hour', '3hour_indicator'}:
         abort(404)
 
-    file_path = dataset_files[dataset]
-    if not file_path.exists():
+    file_path = _find_dataset_file(well, dataset)
+    if file_path is None or not file_path.exists():
         abort(404)
 
     if fmt == 'csv':
