@@ -369,6 +369,32 @@
       gap: 24px;
     }
 
+    .download-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn-download {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 8px 14px;
+      border-radius: 10px;
+      background: rgba(115, 103, 240, 0.12);
+      border: 1px solid rgba(115, 103, 240, 0.3);
+      color: #7367F0;
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 0.85rem;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .btn-download:hover {
+      background: rgba(115, 103, 240, 0.22);
+      color: #5A53A1;
+    }
+
     table.dataTable thead th {
       background: linear-gradient(118deg, rgba(115, 103, 240, 0.08), rgba(115, 103, 240, 0.05));
       color: #5A53A1;
@@ -677,6 +703,26 @@
               <span style="font-size:0.85rem; color:#9E9AB2;"><i class="mdi mdi-file-document"></i> {{ pred_csv_path }}</span>
               {% endif %}
             </div>
+            {% if download_links.get('30min') or download_links.get('30min_indicator') %}
+            <div class="download-links" aria-label="Download options for 30-minute data">
+              {% if download_links.get('30min') %}
+              <a class="btn-download" href="{{ download_links['30min']['csv'] }}">
+                <i class="mdi mdi-download"></i> 30-min CSV
+              </a>
+              <a class="btn-download" href="{{ download_links['30min']['excel'] }}">
+                <i class="mdi mdi-file-excel"></i> 30-min Excel
+              </a>
+              {% endif %}
+              {% if download_links.get('30min_indicator') %}
+              <a class="btn-download" href="{{ download_links['30min_indicator']['csv'] }}">
+                <i class="mdi mdi-download"></i> 30-min Indicator CSV
+              </a>
+              <a class="btn-download" href="{{ download_links['30min_indicator']['excel'] }}">
+                <i class="mdi mdi-file-excel"></i> 30-min Indicator Excel
+              </a>
+              {% endif %}
+            </div>
+            {% endif %}
             {% if statuses or indicators %}
             <div class="dropdown-filters">
               {% if statuses %}
@@ -752,6 +798,26 @@
                   {% endfor %}
                 </select>
               </label>
+            </div>
+            {% endif %}
+            {% if download_links.get('3hour') or download_links.get('3hour_indicator') %}
+            <div class="download-links" aria-label="Download options for 3-hour data">
+              {% if download_links.get('3hour') %}
+              <a class="btn-download" href="{{ download_links['3hour']['csv'] }}">
+                <i class="mdi mdi-download"></i> 3-hour CSV
+              </a>
+              <a class="btn-download" href="{{ download_links['3hour']['excel'] }}">
+                <i class="mdi mdi-file-excel"></i> 3-hour Excel
+              </a>
+              {% endif %}
+              {% if download_links.get('3hour_indicator') %}
+              <a class="btn-download" href="{{ download_links['3hour_indicator']['csv'] }}">
+                <i class="mdi mdi-download"></i> 3-hour Indicator CSV
+              </a>
+              <a class="btn-download" href="{{ download_links['3hour_indicator']['excel'] }}">
+                <i class="mdi mdi-file-excel"></i> 3-hour Indicator Excel
+              </a>
+              {% endif %}
             </div>
             {% endif %}
           </div>

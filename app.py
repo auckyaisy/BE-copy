@@ -4,7 +4,17 @@ import shutil
 from pathlib import Path
 from typing import Optional
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    jsonify,
+    send_file,
+    abort,
+)
 import json
 import pandas as pd
 import numpy as np
@@ -20,74 +30,6 @@ app.secret_key = 'replace-this-with-a-secure-random-secret'
 
 UPLOAD_DIR = Path('data') / 'uploaded'
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-
-RECOMMENDATION_MAP = {
-    'Running': " ",
-    'Low PI': (
-        "The Possibility Causes: 1. Well productivity less than pump design range "
-        "2. Restricted pump NOTIFICATIONS FOR ENGINEER! 1. Analyze the fluid level and "
-        "Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head "
-        "pressure and bring the pump production rate within design rate 2. Check the possibility "
-        "of restricted pump! Pumping fluids through tubing when water sources are available."
-    ),
-    'Pump Wear': (
-        "NOTIFICATIONS FOR ENGINEER! 1. Check performance drop (>15–20% from initial installation) "
-        "2. Verify vibration increase (>20%) 3. Perform shut-in test with surface check valve "
-        "closed while pump is running"
-    ),
-    'Tubing Leak': (
-        "NOTIFICATIONS FOR ENGINEER! 1. Confirm by a pressure test at the tubing wellhead "
-        "2. Meanwhile, fill up the tubing and pressure up against RCV"
-    ),
-    'Higher PI': (
-        "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well productivity above pump design range "
-        "1. Analyze fluid level and BHP 2. Adjust wellhead pressure to maintain design rate "
-        "The Possibility Causes: Change in fluid characteristics 1. Analyze fluid level and BHP "
-        "2. Conduct fluid analysis for pump re-design reference"
-    ),
-    'Increase in Frequency': (
-        "NOTIFICATIONS FOR ENGINEER! 1. Compare discharge pressure with historical data "
-        "2. Reduce frequency via VSD"
-    ),
-    'Open Choke': (
-        "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, "
-        "compare with historical well data"
-    ),
-    'Increase in Watercut': (
-        "NOTIFICATIONS FOR ENGINEER! Adjust tubing wellhead pressure to bring production rate "
-        "within design limits"
-    ),
-    'Sand Ingestion': (
-        "NOTIFICATIONS FOR ENGINEER! 1. Check flow line and separator for evidence of sand, mud, "
-        "or debris 2. Design solid control system for next installation"
-    ),
-    'Closed Valve': (
-        "NOTIFICATIONS FOR ENGINEER! 1. Verify if the valve was deliberately partially closed by "
-        "Field Service Tech 2. Contact the Field Technician for on-site inspection"
-    ),
-    'Electrical Downhole Problem': (
-        "NOTIFICATIONS FOR ENGINEER! 1. Verify surface equipment (VSD, transformer, junction box) "
-        "to isolate downhole issue 2. Perform VSD soft shutdown to prevent reverse current damage "
-        "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
-    ),
-    'Shut-in': (
-        "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency "
-        "are expected to be zero."
-    ),
-    '100% Watercut': (
-        "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well producing 100% water—possible water "
-        "breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water "
-        "source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
-    ),
-    'Start-up Phase': (
-        "Start-up Phase after extended data gap: 1. Conduct no-load test before commissioning to ensure "
-        "proper drive operation 2. Verify drive parameters, transformer taps, and gauge units are correctly "
-        "set 3. Test both rotations; select the one with lower amperage (correct pump rotation) "
-        "4. Monitor WHP—if no buildup, briefly choke the well to initiate flow and confirm ΔP"
-    ),
-}
-
 
 def fig_to_base64(fig) -> str:
     buf = io.BytesIO()
@@ -134,8 +76,28 @@ def _build_indicator_string(row, columns=['A', 'IP', 'DP', 'R']):
     return " ".join(indicators) if indicators else ""
 
 
+def _well_output_dir(well_name: str) -> Path:
+    """Return the per-well output directory under OUTPUT_DIR."""
+    path = OUTPUT_DIR / well_name
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _dataset_paths(well_name: str) -> dict:
+    out_dir = _well_output_dir(well_name)
+    return {
+        '30min': out_dir / f"{well_name}_failure_prediction_30min.csv",
+        '30min_indicator': out_dir / f"{well_name}_indicator_30min.csv",
+        '3hour': out_dir / "result_df_3 jam.csv",
+        '3hour_indicator': out_dir / "result_df_3jam_with_indicator.csv",
+    }
+
+
 def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: Optional[str] = None, zoom_end: Optional[str] = None):
     """Shared renderer for results to support both POST and GET flows."""
+    out_dir = _well_output_dir(well_name)
+    dataset_files = _dataset_paths(well_name)
+
     # Build slopes and resampled dataset for visualization
     slopes_df = pipeline._compute_window_slopes_30min(pipeline.data)
     df_all = pipeline._build_df_all_30min(pipeline.data)
@@ -170,16 +132,19 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     ax2.legend()
     rate_plot = fig_to_base64(fig2)
 
-    # Load failure prediction table from saved CSV
-    pred_csv = OUTPUT_DIR / f"{well_name}_failure_prediction_30min.csv"
+    # Load failure prediction table from saved CSV (per well)
+    pred_csv = dataset_files['30min']
     pred_df = None
+    pdf = pd.DataFrame()
+    aggregated_df = None
+    aggregated_lookup = {}
     latest_failure = None
     latest_failure_30min = None
     latest_failure_3hour = None
     latest_report = None
     
     # Load latest_report.json if exists (for new UI format)
-    latest_report_json = OUTPUT_DIR / f"{well_name}_latest_report.json"
+    latest_report_json = out_dir / f"{well_name}_latest_report.json"
     if latest_report_json.exists():
         try:
             with open(latest_report_json, 'r', encoding='utf-8') as f:
@@ -189,7 +154,22 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     
     if pred_csv.exists():
         pred_df = pd.read_csv(pred_csv)
-        
+        pdf = pred_df.copy()
+
+        aggregated_path = dataset_files['3hour_indicator']
+        if aggregated_path.exists():
+            try:
+                aggregated_df = pd.read_csv(aggregated_path)
+                aggregated_df['Window_Start_Time'] = pd.to_datetime(
+                    aggregated_df['Window_Start_Time'], errors='coerce'
+                )
+                aggregated_df = aggregated_df.dropna(subset=['Window_Start_Time']).sort_values('Window_Start_Time')
+                if not aggregated_df.empty:
+                    aggregated_lookup = aggregated_df.set_index('Window_Start_Time').to_dict('index')
+            except Exception:
+                aggregated_df = None
+                aggregated_lookup = {}
+
         # Merge slopes data to add Indicator column for 30-min readings
         if pred_df is not None and not pred_df.empty and not slopes_df.empty:
             # Merge on Window_Start_Time
@@ -267,9 +247,8 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         for (d, gs, ge), g in groups:
             dominant = pick_dominant_status(g)
             non_run_count = (g['Status'] != 'Running').sum()
-            
+
             # Calculate aggregated indicator for 3-hour window
-            # Check for each parameter if it has mixed directions
             agg_indicator_parts = []
             for param in ['A', 'IP', 'DP', 'R']:
                 if param in g.columns:
@@ -284,7 +263,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                         elif has_down:
                             agg_indicator_parts.append(f"{param}↓")
             agg_indicator = " ".join(agg_indicator_parts)
-            
+
             dom_rows.append({
                 'date': d,
                 'group_start': gs,
@@ -297,16 +276,38 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
 
         # Summaries for rendering
         for _, r in result_df.iterrows():
+            gs = pd.to_datetime(r['group_start'])
+            ge = pd.to_datetime(r['group_end'])
             dominant_status = r['Dominant Status']
-            recommendation = RECOMMENDATION_MAP.get(dominant_status, " ")
+            indicator_value = r.get('indicator', '')
+            recommendation_value = str(r.get('recommendation', '') or '').strip()
+
+            agg_info = aggregated_lookup.get(gs) if aggregated_lookup else None
+            if agg_info:
+                agg_status = str(agg_info.get('Dominant Status', '') or '').strip()
+                if agg_status:
+                    dominant_status = agg_status
+                agg_indicator = str(agg_info.get('Indicator', '') or '').strip()
+                if agg_indicator:
+                    indicator_value = agg_indicator
+                agg_rec = agg_info.get('Recommendation', '')
+                if isinstance(agg_rec, str):
+                    agg_rec = agg_rec.strip()
+                elif pd.notna(agg_rec):
+                    agg_rec = str(agg_rec).strip()
+                else:
+                    agg_rec = ''
+                if agg_rec:
+                    recommendation_value = agg_rec
+
             summary = {
-                'date': pd.to_datetime(r['date']).strftime('%Y-%m-%d'),
-                'group_start': pd.to_datetime(r['group_start']).strftime('%Y-%m-%d %H:%M:%S'),
-                'group_end': pd.to_datetime(r['group_end']).strftime('%Y-%m-%d %H:%M:%S'),
+                'date': pd.to_datetime(r['date']).strftime('%Y-%m-%d') if not pd.isna(r['date']) else '',
+                'group_start': gs.strftime('%Y-%m-%d %H:%M:%S'),
+                'group_end': ge.strftime('%Y-%m-%d %H:%M:%S'),
                 'non_running_count': int(r['non_running_count']),
                 'dominant_status': dominant_status,
-                'indicator': r.get('indicator', ''),
-                'recommendation': recommendation,
+                'indicator': indicator_value,
+                'recommendation': recommendation_value,
             }
             group_summaries.append(summary)
             if r['Dominant Status'] != 'Running':
@@ -532,6 +533,14 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         if summary.get('dominant_status')
     }) if group_summaries else []
 
+    download_links = {}
+    for key, path in dataset_files.items():
+        if path.exists():
+            download_links[key] = {
+                'csv': url_for('download_dataset', well=well_name, dataset=key, fmt='csv'),
+                'excel': url_for('download_dataset', well=well_name, dataset=key, fmt='excel'),
+            }
+
     return render_template(
         'dbfieldmgm.web.id/dblpo_results.html',
         well_name=well_name,
@@ -557,11 +566,12 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         statuses=status_options,
         indicators=indicator_options,
         event_statuses=event_status_options,
+        download_links=download_links,
     )
 
 
 def _build_result_df_for_events(pipeline: WellAnalysisPipeline, well_name: str) -> Optional[pd.DataFrame]:
-    pred_csv = OUTPUT_DIR / f"{well_name}_failure_prediction_30min.csv"
+    pred_csv = _dataset_paths(well_name)['30min']
     if not pred_csv.exists():
         return None
     pred_df = pd.read_csv(pred_csv)
@@ -777,6 +787,42 @@ def results():
     except Exception as e:
         flash(f"Error loading results: {e}")
         return redirect(url_for('index'))
+
+
+@app.route('/download/<well>/<dataset>.<fmt>', methods=['GET'])
+def download_dataset(well: str, dataset: str, fmt: str):
+    allowed_fmt = {'csv', 'excel'}
+    if fmt not in allowed_fmt:
+        abort(404)
+
+    dataset_files = _dataset_paths(well)
+    if dataset not in dataset_files:
+        abort(404)
+
+    file_path = dataset_files[dataset]
+    if not file_path.exists():
+        abort(404)
+
+    if fmt == 'csv':
+        return send_file(file_path, as_attachment=True, download_name=file_path.name)
+
+    # Excel: load CSV using pandas then serve as xlsx in-memory
+    try:
+        df = pd.read_csv(file_path)
+    except Exception as exc:
+        abort(500, description=f"Failed to read dataset: {exc}")
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='data')
+    output.seek(0)
+    xlsx_name = file_path.with_suffix('.xlsx').name
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=xlsx_name,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
 
 
 if __name__ == '__main__':
