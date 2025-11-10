@@ -565,28 +565,22 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         if summary.get('dominant_status')
     }) if group_summaries else []
 
-    # Save filtered tables for download
+    # Download links using existing files with Indicator
     download_links = {}
-    if table_df_for_download is not None:
-        # Save 30-min filtered table to temp location for download
-        temp_30min_path = out_dir / f"{well_name}_table_30min_display.csv"
-        table_df_for_download.to_csv(temp_30min_path, index=False)
+    # Use 30min_indicator file (already has Indicator column like "IP↓ DP↓")
+    path_30min = dataset_files.get('30min_indicator')
+    if path_30min and path_30min.exists():
         download_links['table_30min'] = {
-            'csv': url_for('download_dataset', well=well_name, dataset='table_30min_display', fmt='csv'),
-            'excel': url_for('download_dataset', well=well_name, dataset='table_30min_display', fmt='excel'),
+            'csv': url_for('download_dataset', well=well_name, dataset='30min_indicator', fmt='csv'),
+            'excel': url_for('download_dataset', well=well_name, dataset='30min_indicator', fmt='excel'),
         }
     
-    if aggregated_df is not None and not aggregated_df.empty:
-        # Save 3-hour filtered table for download
-        temp_3hour_path = out_dir / f"{well_name}_table_3hour_display.csv"
-        agg_display_df = aggregated_df.copy()
-        # Remove any internal columns if needed
-        if 'Prediction' in agg_display_df.columns:
-            agg_display_df = agg_display_df.drop(columns=['Prediction'])
-        agg_display_df.to_csv(temp_3hour_path, index=False)
+    # Use 3hour_indicator file (already has Indicator column)
+    path_3hour = dataset_files.get('3hour_indicator')
+    if path_3hour and path_3hour.exists():
         download_links['table_3hour'] = {
-            'csv': url_for('download_dataset', well=well_name, dataset='table_3hour_display', fmt='csv'),
-            'excel': url_for('download_dataset', well=well_name, dataset='table_3hour_display', fmt='excel'),
+            'csv': url_for('download_dataset', well=well_name, dataset='3hour_indicator', fmt='csv'),
+            'excel': url_for('download_dataset', well=well_name, dataset='3hour_indicator', fmt='excel'),
         }
 
     return render_template(
