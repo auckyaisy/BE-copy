@@ -90,6 +90,8 @@ def _dataset_paths(well_name: str) -> dict:
         '30min_indicator': out_dir / f"{well_name}_indicator_30min.csv",
         '3hour': out_dir / "result_df_3 jam.csv",
         '3hour_indicator': out_dir / "result_df_3jam_with_indicator.csv",
+        'table_30min_display': out_dir / f"{well_name}_table_30min_display.csv",
+        'table_3hour_display': out_dir / f"{well_name}_table_3hour_display.csv",
     }
 
 
@@ -104,6 +106,8 @@ def _find_dataset_file(well_name: str, dataset: str) -> Path:
         '30min_indicator': OUTPUT_DIR / f"{well_name}_indicator_30min.csv",
         '3hour': OUTPUT_DIR / "result_df_3 jam.csv",
         '3hour_indicator': OUTPUT_DIR / "result_df_3jam_with_indicator.csv",
+        'table_30min_display': OUTPUT_DIR / f"{well_name}_table_30min_display.csv",
+        'table_3hour_display': OUTPUT_DIR / f"{well_name}_table_3hour_display.csv",
     }
     fallback = fallback_map.get(dataset)
     if fallback and fallback.exists():
@@ -521,6 +525,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
 
     # Show top N rows to keep page light; full CSV is available on disk
     table_preview = None
+    table_df_for_download = None
     if pred_df is not None and not pred_df.empty:
         table_df = pred_df.copy()
         if 'Reason' in table_df.columns:
@@ -532,6 +537,10 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         # Remove Prediction column if exists
         if 'Prediction' in table_df.columns:
             table_df = table_df.drop(columns=['Prediction'])
+        
+        # Store full filtered table for download
+        table_df_for_download = table_df.copy()
+        
         table_preview = table_df.head(500).to_dict(orient='records')
         table_columns = list(table_df.columns)
         status_options = sorted({
@@ -556,14 +565,29 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         if summary.get('dominant_status')
     }) if group_summaries else []
 
+    # Save filtered tables for download
     download_links = {}
-    for key in ['30min', '30min_indicator', '3hour', '3hour_indicator']:
-        path = dataset_files.get(key)
-        if path and path.exists():
-            download_links[key] = {
-                'csv': url_for('download_dataset', well=well_name, dataset=key, fmt='csv'),
-                'excel': url_for('download_dataset', well=well_name, dataset=key, fmt='excel'),
-            }
+    if table_df_for_download is not None:
+        # Save 30-min filtered table to temp location for download
+        temp_30min_path = out_dir / f"{well_name}_table_30min_display.csv"
+        table_df_for_download.to_csv(temp_30min_path, index=False)
+        download_links['table_30min'] = {
+            'csv': url_for('download_dataset', well=well_name, dataset='table_30min_display', fmt='csv'),
+            'excel': url_for('download_dataset', well=well_name, dataset='table_30min_display', fmt='excel'),
+        }
+    
+    if aggregated_df is not None and not aggregated_df.empty:
+        # Save 3-hour filtered table for download
+        temp_3hour_path = out_dir / f"{well_name}_table_3hour_display.csv"
+        agg_display_df = aggregated_df.copy()
+        # Remove any internal columns if needed
+        if 'Prediction' in agg_display_df.columns:
+            agg_display_df = agg_display_df.drop(columns=['Prediction'])
+        agg_display_df.to_csv(temp_3hour_path, index=False)
+        download_links['table_3hour'] = {
+            'csv': url_for('download_dataset', well=well_name, dataset='table_3hour_display', fmt='csv'),
+            'excel': url_for('download_dataset', well=well_name, dataset='table_3hour_display', fmt='excel'),
+        }
 
     return render_template(
         'dbfieldmgm.web.id/dblpo_results.html',
