@@ -844,15 +844,23 @@ def download_dataset(well: str, dataset: str, fmt: str):
     if file_path is None or not file_path.exists():
         abort(404)
 
-    if fmt == 'csv':
-        return send_file(file_path, as_attachment=True, download_name=file_path.name)
-
-    # Excel: load CSV using pandas then serve as xlsx in-memory
     try:
         df = pd.read_csv(file_path)
     except Exception as exc:
         abort(500, description=f"Failed to read dataset: {exc}")
 
+    if fmt == 'csv':
+        output = io.BytesIO()
+        df.to_csv(output, index=False, encoding='utf-8-sig')
+        output.seek(0)
+        return send_file(
+            output,
+            as_attachment=True,
+            download_name=file_path.name,
+            mimetype='text/csv; charset=utf-8'
+        )
+
+    # Excel: serve as xlsx in-memory
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False, sheet_name='data')
