@@ -163,7 +163,11 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     latest_report = None
     
     # Load latest_report.json if exists (for new UI format)
+    # Try per-well directory first, then fallback to root OUTPUT_DIR
     latest_report_json = out_dir / f"{well_name}_latest_report.json"
+    if not latest_report_json.exists():
+        latest_report_json = OUTPUT_DIR / f"{well_name}_latest_report.json"
+    
     if latest_report_json.exists():
         try:
             with open(latest_report_json, 'r', encoding='utf-8') as f:
