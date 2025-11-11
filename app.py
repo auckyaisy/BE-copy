@@ -155,8 +155,13 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     ax2.legend()
     rate_plot = fig_to_base64(fig2)
 
-    # Load failure prediction table from saved CSV (per well)
-    pred_csv = dataset_files['30min'] or _dataset_paths(well_name)['30min']
+    # Load failure prediction table for 30-minute view
+    # Prefer the indicator-enriched file so 'Indicator' matches pipeline output
+    pred_csv = (
+        _find_dataset_file(well_name, '30min_indicator')
+        or _find_dataset_file(well_name, '30min')
+        or _dataset_paths(well_name)['30min']
+    )
     pred_df = None
     pdf = pd.DataFrame()
     aggregated_df = None
@@ -197,19 +202,32 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                 aggregated_df = None
                 aggregated_lookup = {}
 
-        # Merge slopes data to add Indicator column for 30-min readings
-        if pred_df is not None and not pred_df.empty and not slopes_df.empty:
-            # Merge on Window_Start_Time
-            pred_df['Window_Start_Time'] = pd.to_datetime(pred_df['Window_Start_Time'], errors='coerce')
-            slopes_df['Window_Start_Time'] = pd.to_datetime(slopes_df['Window_Start_Time'], errors='coerce')
-            pred_df = pred_df.merge(
-                slopes_df[['Window_Start_Time', 'A', 'IP', 'DP', 'R']], 
-                on='Window_Start_Time', 
-                how='left',
-                suffixes=('', '_slope')
-            )
-            # Calculate Indicator for each row
-            pred_df['Indicator'] = pred_df.apply(lambda row: _build_indicator_string(row, ['A', 'IP', 'DP', 'R']), axis=1)
+        # Ensure slopes exist for aggregation logic; preserve pipeline-provided Indicator values
+        if pred_df is not None and not pred_df.empty:
+            # Add slope cols if missing (indicator_30min.csv already has them)
+            need_slopes = not set(['A', 'IP', 'DP', 'R']).issubset(pred_df.columns)
+            if need_slopes and not slopes_df.empty:
+                pred_df['Window_Start_Time'] = pd.to_datetime(pred_df['Window_Start_Time'], errors='coerce')
+                slopes_df['Window_Start_Time'] = pd.to_datetime(slopes_df['Window_Start_Time'], errors='coerce')
+                pred_df = pred_df.merge(
+                    slopes_df[['Window_Start_Time', 'A', 'IP', 'DP', 'R']],
+                    on='Window_Start_Time',
+                    how='left'
+                )
+            # Only compute Indicator if not provided by pipeline
+            if 'Indicator' not in pred_df.columns:
+                pred_df['Indicator'] = pred_df.apply(
+                    lambda row: _build_indicator_string(row, ['A', 'IP', 'DP', 'R']), axis=1
+                )
+
+            # Normalize indicator text for special statuses to match pipeline semantics
+            try:
+                pred_df['Status'] = pred_df['Status'].astype(str).str.strip()
+                pred_df.loc[pred_df['Status'] == '100% Watercut', 'Indicator'] = '100% WC in Prod'
+                pred_df.loc[pred_df['Status'] == 'Electrical Downhole Problem', 'Indicator'] = 'A and Freq 0, others constant'
+                pred_df.loc[pred_df['Status'].isin(['Running', 'Shut-in', 'Start-up Phase']), 'Indicator'] = ''
+            except Exception:
+                pass
 
     # Build 3-hour grouped summaries according to rules
     group_summaries = []
@@ -523,22 +541,22 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         except Exception:
             slope_data = {'times': [], 'series': {}, 'bands': []}
 
-    # Show top N rows to keep page light; full CSV is available on disk
+    # Show top N rows to keep page light; restrict 30-min table to requested columns
     table_preview = None
     table_df_for_download = None
     if pred_df is not None and not pred_df.empty:
         table_df = pred_df.copy()
-        if 'Reason' in table_df.columns:
-            table_df = table_df.drop(columns=['Reason'])
-        # Remove slope columns (A, IP, DP, R) from display but keep Indicator
-        for col in ['A', 'IP', 'DP', 'R']:
-            if col in table_df.columns:
-                table_df = table_df.drop(columns=[col])
-        # Remove Prediction column if exists
-        if 'Prediction' in table_df.columns:
-            table_df = table_df.drop(columns=['Prediction'])
-        
-        # Store full filtered table for download
+        # Keep only the requested columns if available
+        requested_cols = ['Window_Start_Time', 'Indicator', 'Status', 'Recommendation', 'Date']
+        keep_cols = [c for c in requested_cols if c in table_df.columns]
+        if keep_cols:
+            table_df = table_df[keep_cols]
+        else:
+            # Fallback: drop known extra columns
+            drop_cols = ['Reason', 'Prediction', 'A','IP','DP','IT','MT','V','R']
+            table_df = table_df.drop(columns=[c for c in drop_cols if c in table_df.columns], errors='ignore')
+
+        # Store filtered table for download
         table_df_for_download = table_df.copy()
         
         table_preview = table_df.head(500).to_dict(orient='records')
@@ -567,12 +585,12 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
 
     # Download links using existing files with Indicator
     download_links = {}
-    # Use 30min_indicator file (already has Indicator column like "IP↓ DP↓")
-    path_30min = dataset_files.get('30min_indicator')
+    # Provide download for the displayed 30-min table (filtered columns only)
+    path_30min = dataset_files.get('30min_indicator') or dataset_files.get('30min')
     if path_30min and path_30min.exists():
         download_links['table_30min'] = {
-            'csv': url_for('download_dataset', well=well_name, dataset='30min_indicator', fmt='csv'),
-            'excel': url_for('download_dataset', well=well_name, dataset='30min_indicator', fmt='excel'),
+            'csv': url_for('download_dataset', well=well_name, dataset='table_30min', fmt='csv'),
+            'excel': url_for('download_dataset', well=well_name, dataset='table_30min', fmt='excel'),
         }
     
     # Use 3hour_indicator file (already has Indicator column)
@@ -837,10 +855,18 @@ def download_dataset(well: str, dataset: str, fmt: str):
     if fmt not in allowed_fmt:
         abort(404)
 
-    if dataset not in {'30min', '30min_indicator', '3hour', '3hour_indicator'}:
+    if dataset not in {'30min', '30min_indicator', '3hour', '3hour_indicator', 'table_30min'}:
         abort(404)
 
-    file_path = _find_dataset_file(well, dataset)
+    # Resolve source file
+    if dataset == 'table_30min':
+        file_path = (
+            _find_dataset_file(well, '30min_indicator')
+            or _find_dataset_file(well, '30min')
+            or _dataset_paths(well)['30min']
+        )
+    else:
+        file_path = _find_dataset_file(well, dataset)
     if file_path is None or not file_path.exists():
         abort(404)
 
@@ -848,6 +874,12 @@ def download_dataset(well: str, dataset: str, fmt: str):
         df = pd.read_csv(file_path)
     except Exception as exc:
         abort(500, description=f"Failed to read dataset: {exc}")
+
+    # Filter columns for special virtual dataset
+    if dataset == 'table_30min':
+        keep = [c for c in ['Window_Start_Time', 'Indicator', 'Status', 'Recommendation', 'Date'] if c in df.columns]
+        if keep:
+            df = df[keep]
 
     if fmt == 'csv':
         output = io.BytesIO()
