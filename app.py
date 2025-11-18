@@ -125,17 +125,17 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
     slopes_df = pipeline._compute_window_slopes_30min(pipeline.data)
     df_all = pipeline._build_df_all_30min(pipeline.data)
 
-    # Plot: slopes over time for A, IP, DP, IT, MT, V, R
+    # Plot: slopes over time for A, IP, DP, IT, MT, V, R (per minute)
     fig1, ax1 = plt.subplots(figsize=(14, 6))
     if not slopes_df.empty:
         slopes_df = slopes_df.sort_values('Window_Start_Time')
         x = slopes_df['Window_Start_Time']
         for col, color in zip(['A','IP','DP','IT','MT','V','R'], ['#4C78A8','#F58518','#54A24B','#E45756','#72B7B2','#B279A2','#FF9DA6']):
             if col in slopes_df.columns and slopes_df[col].notna().any():
-                ax1.plot(x, slopes_df[col], label=col, linewidth=1, color=color)
+                ax1.plot(x, slopes_df[col] * 60.0, label=col, linewidth=1, color=color)
     ax1.set_title(f"{well_name} - 30-minute window slopes")
     ax1.set_xlabel('Time')
-    ax1.set_ylabel('Slope (per second)')
+    ax1.set_ylabel('Slope (per minute)')
     ax1.legend(ncol=4, fontsize=9)
     slope_plot = fig_to_base64(fig1)
 
@@ -226,6 +226,13 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                 pred_df.loc[pred_df['Status'] == '100% Watercut', 'Indicator'] = '100% WC in Prod'
                 pred_df.loc[pred_df['Status'] == 'Electrical Downhole Problem', 'Indicator'] = 'A and Freq 0, others constant'
                 pred_df.loc[pred_df['Status'].isin(['Running', 'Shut-in', 'Start-up Phase']), 'Indicator'] = ''
+                if 'Recommendation' in pred_df.columns:
+                    pred_df['Recommendation'] = (
+                        pred_df['Recommendation']
+                        .astype(str)
+                        .str.replace('NOTIFICATIONS FOR ENGINEER!', '', regex=False)
+                        .str.strip()
+                    )
             except Exception:
                 pass
 
@@ -470,7 +477,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
         except Exception:
             slope_data = None
 
-        # Slope overlay plot with shaded bands and optional zoom (server-generated static as fallback)
+        # Slope overlay plot with shaded bands and optional zoom (server-generated static as fallback) - per minute
         try:
             fig3, ax3 = plt.subplots(figsize=(14, 6))
             sd = slopes_df.copy()
@@ -482,7 +489,7 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                 sd = sd[(sd['Window_Start_Time'] >= z0) & (sd['Window_Start_Time'] <= z1)]
             for col, color in zip(['A','IP','DP','IT','MT','V','R'], ['#4C78A8','#F58518','#54A24B','#E45756','#72B7B2','#B279A2','#FF9DA6']):
                 if col in sd.columns and sd[col].notna().any():
-                    ax3.plot(sd['Window_Start_Time'], sd[col], label=col, linewidth=1, color=color)
+                    ax3.plot(sd['Window_Start_Time'], sd[col] * 60.0, label=col, linewidth=1, color=color)
             # Shade bands
             nonrun_bands = result_df[result_df['Dominant Status'] != 'Running']
             color_map = {'Low PI': '#E45756', 'Shut-in': '#000000'}
@@ -496,13 +503,13 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                 col = color_map.get(label, '#B279A2')
                 ax3.axvspan(gs, ge, color=col, alpha=0.12, lw=0)
                 mid = gs + (ge - gs)/2
-                ymax = np.nanmax(sd.drop(columns=['Window_Start_Time']).to_numpy(dtype=float)) if not sd.empty else 0
+                ymax = np.nanmax(sd.drop(columns=['Window_Start_Time']).to_numpy(dtype=float)) * 60.0 if not sd.empty else 0
                 ax3.text(mid, ymax, label, ha='center', va='bottom', fontsize=8, color=col)
             if zoom_start and zoom_end:
                 ax3.set_xlim(pd.to_datetime(zoom_start), pd.to_datetime(zoom_end))
             ax3.set_title(f"{well_name} - 30-min Slopes with Events{' (zoomed)' if zoom_start else ''}")
             ax3.set_xlabel('Time')
-            ax3.set_ylabel('Slope (per second)')
+            ax3.set_ylabel('Slope (per minute)')
             ax3.legend(ncol=4, fontsize=9)
             events_plot = fig_to_base64(fig3)
         except Exception:
@@ -668,7 +675,7 @@ def _make_slope_overlay_b64(pipeline: WellAnalysisPipeline, well_name: str, zoom
             sd = sd[(sd['Window_Start_Time'] >= z0) & (sd['Window_Start_Time'] <= z1)]
         for col, color in zip(['A','IP','DP','IT','MT','V','R'], ['#4C78A8','#F58518','#54A24B','#E45756','#72B7B2','#B279A2','#FF9DA6']):
             if col in sd.columns and sd[col].notna().any():
-                ax.plot(sd['Window_Start_Time'], sd[col], label=col, linewidth=1, color=color)
+                ax.plot(sd['Window_Start_Time'], sd[col] * 60.0, label=col, linewidth=1, color=color)
         nonrun_bands = result_df[result_df['Dominant Status'] != 'Running']
         color_map = {'Low PI': '#E45756', 'Shut-in': '#000000'}
         for _, row in nonrun_bands.iterrows():
@@ -681,13 +688,13 @@ def _make_slope_overlay_b64(pipeline: WellAnalysisPipeline, well_name: str, zoom
             col = color_map.get(label, '#B279A2')
             ax.axvspan(gs, ge, color=col, alpha=0.12, lw=0)
             mid = gs + (ge - gs)/2
-            ymax = np.nanmax(sd.drop(columns=['Window_Start_Time']).to_numpy(dtype=float)) if not sd.empty else 0
+            ymax = np.nanmax(sd.drop(columns=['Window_Start_Time']).to_numpy(dtype=float)) * 60.0 if not sd.empty else 0
             ax.text(mid, ymax, label, ha='center', va='bottom', fontsize=8, color=col)
         if zoom_start and zoom_end:
             ax.set_xlim(pd.to_datetime(zoom_start), pd.to_datetime(zoom_end))
         ax.set_title(f"{well_name} - 30-min Slopes with Events{' (zoomed)' if zoom_start else ''}")
         ax.set_xlabel('Time')
-        ax.set_ylabel('Slope (per second)')
+        ax.set_ylabel('Slope (per minute)')
         ax.legend(ncol=4, fontsize=9)
         return fig_to_base64(fig)
     except Exception:
@@ -797,6 +804,8 @@ def analyze():
                 # normalize date
                 if 'Date' in df_wc.columns:
                     df_wc['Date'] = pd.to_datetime(df_wc['Date'], errors='coerce').dt.normalize()
+                if 'WC' in df_wc.columns:
+                    df_wc['WC'] = pd.to_numeric(df_wc['WC'], errors='coerce')
                 pipeline.df_wc = df_wc
                 _sync_prod_data(prod_path)
             except Exception:
@@ -835,6 +844,8 @@ def results():
                 df_wc = pd.read_csv(prod_path)
                 if 'Date' in df_wc.columns:
                     df_wc['Date'] = pd.to_datetime(df_wc['Date'], errors='coerce').dt.normalize()
+                if 'WC' in df_wc.columns:
+                    df_wc['WC'] = pd.to_numeric(df_wc['WC'], errors='coerce')
                 pipeline.df_wc = df_wc
                 _sync_prod_data(prod_path)
             except Exception:

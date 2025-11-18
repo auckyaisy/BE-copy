@@ -617,7 +617,7 @@
 
       <section class="card" aria-label="Daily activity chart" style="margin-top: 28px;">
         <div class="card-header">
-          <h2><i class="mdi mdi-chart-bar"></i> Daily Activity</h2>
+          <h2><i class="mdi mdi-chart-bar"></i> Daily Activity (Dates with Failure)</h2>
           <span style="font-size: 0.9rem; color: #9E9AB2;">Hover bars for details</span>
         </div>
         <div class="card-body">
@@ -680,7 +680,6 @@
             <h2><i class="mdi mdi-chart-line"></i> 30-minute Window Slopes</h2>
           </div>
           <div class="card-body">
-            <p style="margin-top:0; color: #A8AAAE;">Slopes for A, IP, DP, IT, MT, V, R (per-second slope within each 30-minute window).</p>
             <img class="plot-img" src="{{ slope_plot }}" alt="Slope plot">
           </div>
         </div>
@@ -713,7 +712,7 @@
               </a>
             </div>
             {% endif %}
-            {% if statuses or indicators %}
+            {% if statuses %}
             <div class="dropdown-filters">
               {% if statuses %}
               <label>
@@ -722,17 +721,6 @@
                   <option value="">All</option>
                   {% for status in statuses %}
                   <option value="{{ status }}">{{ status }}</option>
-                  {% endfor %}
-                </select>
-              </label>
-              {% endif %}
-              {% if indicators %}
-              <label>
-                Indicator
-                <select id="indicator-filter" class="form-select">
-                  <option value="">All</option>
-                  {% for indicator in indicators %}
-                  <option value="{{ indicator }}">{{ indicator }}</option>
                   {% endfor %}
                 </select>
               </label>
@@ -917,6 +905,7 @@
       const legendEl = document.getElementById('dailyLegend');
       if (legendEl) {
         const uniqueStatuses = Array.from(new Set(payload.statuses || []));
+        if (!uniqueStatuses.includes('Running')) uniqueStatuses.push('Running');
         legendEl.innerHTML = uniqueStatuses.map(status => {
           const color = colorMap[status] || '#6C757D';
           return `<span class="badge-custom" style="background:${color}; color:#fff; border-color:${color};">${status}</span>`;
@@ -944,7 +933,6 @@
       });
 
       const statusSelect = $('#status-filter');
-      const indicatorSelect = $('#indicator-filter');
 
       const findColumnIndex = (headerText) => {
         let index = -1;
@@ -966,13 +954,6 @@
         });
       }
 
-      const indicatorIdx = findColumnIndex('Indicator');
-      if (indicatorIdx >= 0 && indicatorSelect.length) {
-        indicatorSelect.on('change', function () {
-          const val = $(this).val();
-          dt.column(indicatorIdx).search(val ? `^${escapeRegex(val)}$` : '', true, false).draw();
-        });
-      }
 
       return dt;
     }

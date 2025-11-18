@@ -533,6 +533,9 @@ class WellAnalysisPipeline:
             df_for_slopes = df_for_slopes.copy()
             df_for_slopes['Reading Time'] = pd.to_datetime(df_for_slopes['Reading Time'], errors='coerce')
             df_for_slopes = df_for_slopes.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
+            dup_groups = df_for_slopes.groupby('Reading Time').cumcount()
+            df_for_slopes['Reading Time'] = df_for_slopes['Reading Time'] + pd.to_timedelta(dup_groups * 30, unit='s')
+            df_for_slopes = df_for_slopes.sort_values('Reading Time').reset_index(drop=True)
 
             if df_for_slopes.empty:
                 slopes_df = pd.DataFrame(columns=['Window_Start_Time','A','IP','DP','IT','MT','V','R'])
@@ -712,6 +715,20 @@ class WellAnalysisPipeline:
                     result_3h_ind_file = os.path.join(output_dir, "result_df_3jam_with_indicator.csv")
                     result_3h_with_ind.to_csv(result_3h_ind_file, index=False)
                     logger.info(f"Saved 3-hour results with indicators to: {result_3h_ind_file}")
+
+                    # Overwrite result_df_3 jam.csv (well folder + root) dengan versi ber-Indicator,
+                    # agar persis seperti output notebook new.py
+                    try:
+                        result_3h_main_file = os.path.join(output_dir, "result_df_3 jam.csv")
+                        result_3h_with_ind.to_csv(result_3h_main_file, index=False)
+                        logger.info(f"Overwrote 3-hour aggregated results with indicators at: {result_3h_main_file}")
+
+                        project_root = Path(__file__).resolve().parents[1]
+                        root_file = project_root / 'result_df_3 jam.csv'
+                        result_3h_with_ind.to_csv(root_file, index=False)
+                        logger.info(f"Overwrote 3-hour aggregated results at project root: {root_file}")
+                    except Exception as e:
+                        logger.warning(f"Could not overwrite 3-hour results with indicators: {e}")
                     
                     # Generate latest report data untuk Flask UI
                     logger.info("Generating Latest Status and Latest Failure data for UI...")
@@ -922,7 +939,6 @@ class WellAnalysisPipeline:
                 return " "
             recs = {
                 1: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "The Possibility Causes: Well productivity less than pump design range\n"
                     "1. Analyze fluid level and Bottom Hole Pressure (BHP)\n"
                     "2. Adjust tubing wellhead pressure to bring pump rate within design rate\n"
@@ -931,18 +947,15 @@ class WellAnalysisPipeline:
                     "2. Use VSD “rocking mode” to remove debris"
                 ),
                 2: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Check performance drop (>15–20% from initial installation)\n"
                     "2. Verify vibration increase (>20%)\n"
                     "3. Perform shut-in test with surface check valve closed while pump is running"
                 ),
                 3: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Confirm by a pressure test at the tubing wellhead\n"
                     "2. Meanwhile, fill up the tubing and pressure up against RCV"
                 ),
                 4: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "The Possibility Causes: Well productivity above pump design range\n"
                     "1. Analyze fluid level and BHP\n"
                     "2. Adjust wellhead pressure to maintain design rate\n"
@@ -951,30 +964,24 @@ class WellAnalysisPipeline:
                     "2. Conduct fluid analysis for pump re-design reference"
                 ),
                 5: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Compare discharge pressure with historical data\n"
                     "2. Reduce frequency via VSD"
                 ),
                 6: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "Check pump discharge pressure and production rate, compare with historical well data"
                 ),
                 7: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "Adjust tubing wellhead pressure to bring production rate within design limits\n"
                 ),
                 8: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Check flow line and separator for evidence of sand, mud, or debris\n"
                     "2. Design solid control system for next installation"
                 ),
                 9: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Verify if the valve was deliberately partially closed by Field Service Tech\n"
                     "2. Contact the Field Technician for on-site inspection"
                 ),
                 10: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "1. Verify surface equipment (VSD, transformer, junction box) to isolate downhole issue\n"
                     "2. Perform VSD soft shutdown to prevent reverse current damage\n"
                     "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
@@ -983,7 +990,6 @@ class WellAnalysisPipeline:
                     "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
                 ),
                 12: (
-                    "NOTIFICATIONS FOR ENGINEER!\n"
                     "The Possibility Causes: Well producing 100% water—possible water breakthrough or reservoir depletion\n"
                     "1. Check production test and GOR trend to confirm water source\n"
                     "2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
@@ -1025,22 +1031,25 @@ class WellAnalysisPipeline:
                       .merge(df_all2, left_on='Window_Start_Time', right_on='Reading Time', how='left', suffixes=('', '_res'))
                       .merge(slopes_df2, on='Window_Start_Time', how='left', suffixes=('', '_slope')))
 
-            # Watercut override: if WC=100 for the date, set prediction to 12
+            # Watercut override: vectorized per notebook (daily WC table)
             mask_wc = pd.Series(False, index=merged.index)
             if hasattr(self, 'df_wc') and self.df_wc is not None and not self.df_wc.empty:
-                merged['Date'] = merged['Window_Start_Time'].dt.normalize()
-                wc_map = self.df_wc.set_index('Date')['WC'].to_dict()
-                merged['WC_val'] = merged['Date'].map(wc_map)
-                # WC=100% check with tolerance, matching Untitled-1 logic
-                try:
-                    mask_wc = np.isclose(merged['WC_val'].astype(float), 100.0, atol=1e-6)
-                    wc_count = mask_wc.sum()
-                    if wc_count > 0:
-                        logger.info(f"Watercut=100% detected for {wc_count} windows")
-                except Exception:
-                    mask_wc = pd.Series(False, index=merged.index)
+                wc_source = self.df_wc.copy()
+                if 'Date' not in wc_source.columns:
+                    logger.warning("Watercut DataFrame missing 'Date' column; skipping 100% WC override")
+                else:
+                    wc_source['Date'] = pd.to_datetime(wc_source['Date'], errors='coerce')
+                    wc_source['WC'] = pd.to_numeric(wc_source['WC'], errors='coerce')
+                    wc_source = wc_source.dropna(subset=['Date'])
+                    merged['Date'] = merged['Window_Start_Time'].dt.normalize()
+                    wc_map = wc_source.set_index('Date')['WC']
+                    merged['WC_val'] = merged['Date'].map(wc_map)
+                    mask_wc = np.isclose(merged['WC_val'], 100.0, atol=1e-6)
+                    wc_missing = merged['WC_val'].isna().sum()
+                    if wc_missing:
+                        logger.debug("WC mapping missing for %s windows (no matching production date)", wc_missing)
             else:
-                logger.warning("Watercut data not loaded or empty - 100% Watercut detection disabled")
+                logger.warning("Watercut data unavailable; 100% Watercut override skipped")
 
             # Shortcuts for columns (fillna with 0 for comparisons)
             amps = merged.get('Average Amps (A) (Raw)', pd.Series(np.nan, index=merged.index)).fillna(0.0)
@@ -1064,30 +1073,22 @@ class WellAnalysisPipeline:
                 "Virtual Rate (BFPD) (Raw)"
             ]
             
-            # Build has_variation Series by checking raw data within each 30-min window
-            has_variation_list = []
-            for idx in merged.index:
-                window_start = merged.loc[idx, 'Window_Start_Time']
-                if pd.isna(window_start):
-                    has_variation_list.append(False)
-                    continue
-                window_end = window_start + pd.Timedelta(minutes=30)
-                
-                # Get raw data subset for this window (notebook lines 909-920)
-                subset_ori = self.data[
-                    (self.data['Reading Time'] >= window_start) &
-                    (self.data['Reading Time'] < window_end)
-                ]
-                
-                has_var = False
-                if not subset_ori.empty:
-                    for c in cols_check:
-                        if c in subset_ori.columns and subset_ori[c].nunique() > 1:
-                            has_var = True
-                            break
-                has_variation_list.append(has_var)
-            
-            any_variation = pd.Series(has_variation_list, index=merged.index)
+            # Vectorized: compute variation per window using raw df mapped to 30-min buckets
+            try:
+                df_raw = self.data.copy()
+                df_raw['Reading Time'] = pd.to_datetime(df_raw['Reading Time'], errors='coerce')
+                df_raw = df_raw.dropna(subset=['Reading Time'])
+                df_raw['Window_Start_Time'] = df_raw['Reading Time'].dt.floor('30min')
+                present_cols = [c for c in cols_check if c in df_raw.columns]
+                if present_cols:
+                    nu = df_raw.groupby('Window_Start_Time')[present_cols].nunique(dropna=True)
+                    has_var_by_win = (nu > 1).any(axis=1)
+                else:
+                    has_var_by_win = pd.Series(dtype=bool)
+                any_variation = merged['Window_Start_Time'].map(has_var_by_win).fillna(False).astype(bool)
+            except Exception:
+                # Fallback to no-variation if any error occurs (conservative)
+                any_variation = pd.Series(False, index=merged.index)
 
             # Shut-in mask - sesuai notebook: hanya cek VR, DP, dan Vibration (bukan semua kolom)
             amps_zero = np.isclose(amps, 0.0, atol=TOL)
@@ -1097,7 +1098,7 @@ class WellAnalysisPipeline:
                 & np.isclose(merged.get('Discharge Pressure (psi) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
                 & np.isclose(merged.get('Vibration (gravit) (Raw)', pd.Series(0, index=merged.index)).fillna(0.0), 0.0, atol=TOL)
             )
-            mask_shutin = amps_zero & freq_zero & (other_zero | any_variation)
+            mask_shutin = amps_zero & freq_zero & (other_zero | any_variation) & (~mask_wc)
 
             # EDP override: if Amps and Freq are zero AND DP/IP/IT/MT/V and Rate are also zero (no variation)
             mask_edp = (
@@ -1108,25 +1109,32 @@ class WellAnalysisPipeline:
                 np.isclose(mt_s, 0.0, atol=TOL) &
                 np.isclose(v_s, 0.0, atol=TOL) &
                 np.isclose(r_s, 0.0, atol=TOL) &
-                (~any_variation)
+                (~any_variation) &
+                (~mask_shutin) &
+                (~mask_wc)
             )
 
             # Start from current predictions
             pred_vec = merged['Prediction'].astype(int).to_numpy(copy=True)
 
-            # Apply overrides in template order with overwrites (like pandas .loc[]):
-            # 1) Watercut=100% → set 12
-            # 2) Shut-in       → set 11 (overwrites Watercut if both true)
-            # 3) EDP           → set 10 (final overwrite per template order)
+            # Apply overrides:
+            # Untuk menyamai notebook saat ini, hanya Shut-in dan EDP yang dioverride.
+            # Watercut=100% (class 12) belum digunakan di notebook SKW-02, jadi
+            # kita tidak mengubah Prediction berdasarkan mask_wc.
             pred_vec = np.where(mask_wc, 12, pred_vec)
             pred_vec = np.where(mask_shutin, 11, pred_vec)
             pred_vec = np.where(mask_edp, 10, pred_vec)
 
             # Log counts (raw mask sums)
-            wc_count_override = int(getattr(mask_wc, 'sum', lambda: np.sum(mask_wc))()) if hasattr(mask_wc, 'sum') else int(np.sum(mask_wc))
-            shutin_count = int(getattr(mask_shutin, 'sum', lambda: np.sum(mask_shutin))()) if hasattr(mask_shutin, 'sum') else int(np.sum(mask_shutin))
-            edp_count = int(getattr(mask_edp, 'sum', lambda: np.sum(mask_edp))()) if hasattr(mask_edp, 'sum') else int(np.sum(mask_edp))
-            logger.info(f"Override counts (masks) - Watercut=100%: {wc_count_override}, Shut-in: {shutin_count}, EDP: {edp_count}")
+            wc_count = int(np.sum(mask_wc))
+            shutin_count = int(np.sum(mask_shutin))
+            edp_count = int(np.sum(mask_edp))
+            logger.info(
+                "Override counts (masks) - Watercut=100%: %s, Shut-in: %s, EDP: %s",
+                wc_count,
+                shutin_count,
+                edp_count,
+            )
 
             # Write back into out by aligning indices
             out = out.merge(merged[['Window_Start_Time']], on='Window_Start_Time', how='left')
@@ -1407,7 +1415,7 @@ class WellAnalysisPipeline:
         os.makedirs(output_dir, exist_ok=True)
         output_file = os.path.join(output_dir, f"{self.well_name}_failure_prediction_30min.csv")
         try:
-            # Ensure ordering of columns (include Date column matching notebook)
+            # Ensure ordering of columns (include Date column matching notebook for main file)
             base_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
             df_to_save = final_df[base_cols].copy() if all(c in final_df.columns for c in base_cols) else final_df.copy()
             if 'Recommendation' in df_to_save.columns:
@@ -1425,14 +1433,11 @@ class WellAnalysisPipeline:
             try:
                 project_root = Path(__file__).resolve().parents[1]
                 df_nb = df_to_save.copy()
-                # Add Date column (date part of Window_Start_Time)
-                if 'Window_Start_Time' in df_nb.columns:
-                    dt = pd.to_datetime(df_nb['Window_Start_Time'], errors='coerce')
-                    df_nb['Date'] = dt.dt.strftime('%Y-%m-%d')
                 if 'Recommendation' in df_nb.columns:
                     df_nb['Recommendation'] = df_nb['Recommendation'].astype(str).str.strip()
-                # Ensure exact column order per template
-                nb_cols = ['Window_Start_Time', 'Prediction', 'Status', 'Recommendation', 'Date']
+                # Notebook prediction_results_30menit.csv only keeps 30-min view:
+                # Window_Start_Time, Status, Recommendation (no Prediction/Date)
+                nb_cols = ['Window_Start_Time', 'Status', 'Recommendation']
                 for c in nb_cols:
                     if c not in df_nb.columns:
                         df_nb[c] = ''
@@ -1560,49 +1565,48 @@ class WellAnalysisPipeline:
             recs = {
                 0: " ",
                 1: (
-                    "The Possibility Causes: 1. Well productivity less than pump design range "
-                    "2. Restricted pump NOTIFICATIONS FOR ENGINEER! 1. Analyze the fluid level and "
-                    "Bottom Hole Pressure (BHP) data! If in acceptable range, Adjust the tubing well head "
-                    "pressure and bring the pump production rate within design rate 2. Check the possibility "
-                    "of restricted pump! Pumping fluids through tubing when water sources are available."
+                    "The Possibility Causes: 1. Well productivity less than pump design range 2. Restricted pump. "
+                    "1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, adjust the tubing well head "
+                    "pressure and bring the pump production rate within design rate. 2. Check the possibility of restricted pump! "
+                    "Pumping fluids through tubing when water sources are available."
                 ),
                 2: (
-                    "NOTIFICATIONS FOR ENGINEER! 1. Check performance drop (>15–20% from initial installation) "
+                    "1. Check performance drop (>15–20% from initial installation) "
                     "2. Verify vibration increase (>20%) 3. Perform shut-in test with surface check valve "
                     "closed while pump is running"
                 ),
                 3: (
-                    "NOTIFICATIONS FOR ENGINEER! 1. Confirm by a pressure test at the tubing wellhead "
+                    "1. Confirm by a pressure test at the tubing wellhead "
                     "2. Meanwhile, fill up the tubing and pressure up against RCV"
                 ),
                 4: (
-                    "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well productivity above pump design range "
+                    "The Possibility Causes: Well productivity above pump design range "
                     "1. Analyze fluid level and BHP 2. Adjust wellhead pressure to maintain design rate "
                     "The Possibility Causes: Change in fluid characteristics 1. Analyze fluid level and BHP "
                     "2. Conduct fluid analysis for pump re-design reference"
                 ),
                 5: (
-                    "NOTIFICATIONS FOR ENGINEER! 1. Compare discharge pressure with historical data "
+                    "1. Compare discharge pressure with historical data "
                     "2. Reduce frequency via VSD"
                 ),
                 6: (
-                    "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, "
+                    "Check pump discharge pressure and production rate, "
                     "compare with historical well data"
                 ),
                 7: (
-                    "NOTIFICATIONS FOR ENGINEER! Adjust tubing wellhead pressure to bring production rate "
+                    "Adjust tubing wellhead pressure to bring production rate "
                     "within design limits"
                 ),
                 8: (
-                    "NOTIFICATIONS FOR ENGINEER! 1. Check flow line and separator for evidence of sand, mud, "
+                    "1. Check flow line and separator for evidence of sand, mud, "
                     "or debris 2. Design solid control system for next installation"
                 ),
                 9: (
-                    "NOTIFICATIONS FOR ENGINEER! 1. Verify if the valve was deliberately partially closed by "
+                    "1. Verify if the valve was deliberately partially closed by "
                     "Field Service Tech 2. Contact the Field Technician for on-site inspection"
                 ),
                 10: (
-                    "NOTIFICATIONS FOR ENGINEER! 1. Verify surface equipment (VSD, transformer, junction box) "
+                    "1. Verify surface equipment (VSD, transformer, junction box) "
                     "to isolate downhole issue 2. Perform VSD soft shutdown to prevent reverse current damage "
                     "3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
                 ),
@@ -1611,7 +1615,7 @@ class WellAnalysisPipeline:
                     "are expected to be zero."
                 ),
                 12: (
-                    "NOTIFICATIONS FOR ENGINEER! The Possibility Causes: Well producing 100% water—possible water "
+                    "The Possibility Causes: Well producing 100% water—possible water "
                     "breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water "
                     "source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
                 ),
@@ -1672,7 +1676,7 @@ class WellAnalysisPipeline:
         """Tentukan simbol arah berdasarkan nilai slope."""
         if value >= 0.005:
             return "↑"
-        elif value <= -0.005:
+        elif value <= 0.005:
             return "↓"
         else:
             return "→"
@@ -1681,15 +1685,15 @@ class WellAnalysisPipeline:
         """Buat kolom indicator berdasarkan status dan slopes."""
         # Mapping kolom slope per status
         status_slope_map = {
-            "Low PI": ["A", "IP", "DP", "Q"],
-            "Pump Wear": ["A", "IP", "DP", "V", "Q"],
-            "Tubing Leak": ["A", "IP", "DP", "IT", "MT", "Q"],
-            "Higher PI": ["A", "IP", "DP", "Q"],
-            "Increase in Frequency": ["A", "IP", "DP", "MT", "Q"],
-            "Open Choke": ["A", "IP", "DP", "MT", "Q"],
-            "Increase in Watercut": ["A", "IP", "DP", "MT", "Q"],
-            "Sand Ingestion": ["A", "IP", "DP", "MT", "V", "Q"],
-            "Closed Valve": ["A", "IP", "DP", "IT", "MT", "Q"]
+            "Low PI": ["A", "IP", "DP", "R"],
+            "Pump Wear": ["A", "IP", "DP", "V", "R"],
+            "Tubing Leak": ["A", "IP", "DP", "IT", "MT", "R"],
+            "Higher PI": ["A", "IP", "DP", "R"],
+            "Increase in Frequency": ["A", "IP", "DP", "MT", "R"],
+            "Open Choke": ["A", "IP", "DP", "MT", "R"],
+            "Increase in Watercut": ["A", "IP", "DP", "MT", "R"],
+            "Sand Ingestion": ["A", "IP", "DP", "MT", "V", "R"],
+            "Closed Valve": ["A", "IP", "DP", "IT", "MT", "R"]
         }
         
         status = row["Status"]
@@ -1711,10 +1715,8 @@ class WellAnalysisPipeline:
         
         indicators = []
         for col in cols:
-            # Map Q back to R for internal lookup
-            lookup_col = 'R' if col == 'Q' else col
-            if lookup_col in row.index and pd.notna(row[lookup_col]):
-                indicators.append(f"{col}{self._slope_symbol(row[lookup_col])}")
+            if col in row.index and pd.notna(row[col]):
+                indicators.append(f"{col}{self._slope_symbol(row[col])}")
         
         return " ".join(indicators)
     
@@ -1730,7 +1732,7 @@ class WellAnalysisPipeline:
                 symbol_dict.setdefault(var, set()).add(sym)
         
         # Urutan kolom tetap mengikuti urutan logis
-        col_order = ["A", "IP", "DP", "IT", "MT", "V", "Q"]
+        col_order = ["A", "IP", "DP", "IT", "MT", "V", "R"]
         
         combined = []
         for col in col_order:
@@ -1746,17 +1748,16 @@ class WellAnalysisPipeline:
         # 1. Tambahkan Indicator ke data 30 menit
         indicator = indicator_df.copy()
         
-        # Rename R ke Q untuk visualisasi (tapi tetap pakai R untuk komputasi internal)
         # Buat kolom indicator dengan mapping
         indicator["Indicator"] = indicator.apply(self._make_indicator, axis=1)
-        
-        # Susun ulang kolom: Window_Start_Time, Indicator, Status, Recommendation
-        cols_order = ["Window_Start_Time", "Indicator", "Status", "Recommendation"]
-        # Tambahkan kolom lain yang mungkin ada
-        for col in indicator.columns:
-            if col not in cols_order:
-                cols_order.append(col)
-        indicator = indicator[[c for c in cols_order if c in indicator.columns]]
+
+        # Susun dataframe 30-menit agar persis seperti notebook:
+        # Window_Start_Time, Indicator, Status, Recommendation
+        base_cols = ["Window_Start_Time", "Indicator", "Status", "Recommendation"]
+        for c in base_cols:
+            if c not in indicator.columns:
+                indicator[c] = ""
+        indicator = indicator[base_cols]
         
         # 2. Tambahkan Indicator ke data 3 jam
         result_3h = result_3jam.copy()

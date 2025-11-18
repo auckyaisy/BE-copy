@@ -1,0 +1,108 @@
+2025-11-18 12:20:31,310 - src.pipeline - INFO - Loading data from Test Web/Data Sensor/SKW-02.csv
+2025-11-18 12:20:31,570 - src.pipeline - INFO - Loaded Watercut data with 122 rows from /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-02.csv
+2025-11-18 12:20:31,570 - src.pipeline - INFO - 1/4 - Running discharge pressure prediction...
+2025-11-18 12:20:31,571 - src.pipeline - INFO - Loading discharge_pressure model from /Users/oki/Documents/BE-copy/models/knn_dp_SKW.joblib
+2025-11-18 12:20:35,267 - src.pipeline - INFO - Making predictions with discharge_pressure
+2025-11-18 12:20:35,271 - src.pipeline - WARNING - Input contains NaN values. Imputing with column means.
+2025-11-18 12:20:39,288 - src.pipeline - INFO - Exported notebook-style CSV to: /Users/oki/Documents/BE-copy/SKW Final.csv
+2025-11-18 12:20:40,181 - src.pipeline - INFO - 2/4 - Virtual rate handling...
+2025-11-18 12:20:40,217 - src.pipeline - INFO - Dropped NaN rows before VR prediction: 31129 -> 30358 rows
+2025-11-18 12:20:40,218 - src.pipeline - INFO - Running Virtual Rate prediction (notebook behavior)
+2025-11-18 12:20:40,220 - src.pipeline - INFO - Loading virtual_rate model from /Users/oki/Documents/BE-copy/models/knn_model_r.joblib
+2025-11-18 12:20:40,748 - src.pipeline - INFO - Making predictions with virtual_rate
+2025-11-18 12:20:40,896 - src.pipeline - INFO - Applying zero rule: if Amps==0 and Freq==0 then VR=0
+2025-11-18 12:20:42,786 - src.pipeline - INFO - Exported notebook-style CSV to: /Users/oki/Documents/BE-copy/SKW_final_w_Pd.csv
+2025-11-18 12:20:43,727 - src.pipeline - INFO - 3/4 - Building 30-minute resampled dataset (df_all)...
+2025-11-18 12:20:43,931 - src.pipeline - INFO - Saved df_all to: /Users/oki/Documents/BE-copy/df_all.csv
+2025-11-18 12:20:44,146 - src.pipeline - INFO - 4/4 - Computing 30-minute window slopes...
+2025-11-18 12:20:44,663 - src.pipeline - INFO - Saved slopes_df_30menit to: /Users/oki/Documents/BE-copy/slopes_df_30menit.csv
+2025-11-18 12:20:44,805 - src.pipeline - INFO - Saved X_predict_30menit to: /Users/oki/Documents/BE-copy/X_predict_30menit.csv
+2025-11-18 12:20:45,150 - src.pipeline - INFO - Loading failure_prediction model from /Users/oki/Documents/BE-copy/models/knn_tanpa SMOTE_model.pkl
+2025-11-18 12:20:45,164 - src.pipeline - INFO - Making predictions with failure_prediction
+2025-11-18 12:20:46,346 - src.pipeline - INFO - Gap detected: 23.0h between 2025-05-28 10:00:00 and 2025-05-29 09:00:00
+2025-11-18 12:20:46,361 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,579 - src.pipeline - INFO - Gap detected: 28.0h between 2025-07-26 12:00:00 and 2025-07-27 16:00:00
+2025-11-18 12:20:46,589 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,590 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-27 16:00:00 and 2025-07-27 22:00:00
+2025-11-18 12:20:46,597 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,598 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-27 22:00:00 and 2025-07-28 04:00:00
+2025-11-18 12:20:46,605 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,606 - src.pipeline - INFO - Gap detected: 4.5h between 2025-07-28 08:30:00 and 2025-07-28 13:00:00
+2025-11-18 12:20:46,615 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,615 - src.pipeline - INFO - Gap detected: 4.0h between 2025-07-28 13:00:00 and 2025-07-28 17:00:00
+2025-11-18 12:20:46,627 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,629 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-29 02:30:00 and 2025-07-29 08:30:00
+2025-11-18 12:20:46,638 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:20:46,668 - src.pipeline - WARNING - Could not save prediction_with_features_30menit.csv: You are trying to merge on object and datetime64[ns] columns for key 'Window_Start_Time'. If you wish to proceed you should use pd.concat
+2025-11-18 12:20:46,668 - src.pipeline - INFO - Saving results to directory: test_output/SKW-02
+2025-11-18 12:20:46,669 - src.pipeline - INFO - Saving discharge_pressure predictions to: test_output/SKW-02/SKW-02_discharge_pressure_predictions.csv
+2025-11-18 12:20:46,670 - src.pipeline - WARNING - Timestamp length does not match predictions; saving without timestamp
+2025-11-18 12:20:46,795 - src.pipeline - INFO - Successfully saved discharge_pressure predictions to test_output/SKW-02/SKW-02_discharge_pressure_predictions.csv (Size: 310084 bytes)
+2025-11-18 12:20:46,795 - src.pipeline - INFO - Saving virtual_rate predictions to: test_output/SKW-02/SKW-02_virtual_rate_predictions.csv
+2025-11-18 12:20:47,061 - src.pipeline - INFO - Successfully saved virtual_rate predictions to test_output/SKW-02/SKW-02_virtual_rate_predictions.csv (Size: 909242 bytes)
+2025-11-18 12:20:47,061 - src.pipeline - INFO - Skipping raw save for failure_prediction (handled by _save_failure_results)
+2025-11-18 12:20:47,190 - src.pipeline - INFO - Saved final failure results to: test_output/SKW-02/SKW-02_failure_prediction_30min.csv
+2025-11-18 12:20:47,287 - src.pipeline - INFO - Saved notebook-style 30-minute predictions to: /Users/oki/Documents/BE-copy/prediction_results_30menit.csv
+2025-11-18 12:20:47,336 - src.pipeline - INFO - Saved notebook-style predictions to well output: test_output/SKW-02/prediction_results_30menit.csv
+2025-11-18 12:20:48,895 - src.pipeline - INFO - Saved 3-hour aggregated results to: test_output/SKW-02/result_df_3 jam.csv
+2025-11-18 12:20:48,909 - src.pipeline - INFO - Saved 3-hour aggregated results to project root: /Users/oki/Documents/BE-copy/result_df_3 jam.csv
+2025-11-18 12:20:48,910 - src.pipeline - INFO - 5/4 - Adding Indicator columns and generating latest report...
+2025-11-18 12:20:49,417 - src.pipeline - INFO - Saved 30-minute results with indicators to: test_output/SKW-02/SKW-02_indicator_30min.csv
+2025-11-18 12:20:49,427 - src.pipeline - INFO - Saved 3-hour results with indicators to: test_output/SKW-02/result_df_3jam_with_indicator.csv
+2025-11-18 12:20:49,427 - src.pipeline - INFO - Generating Latest Status and Latest Failure data for UI...
+2025-11-18 12:20:49,462 - src.pipeline - INFO - Saved latest report data to: test_output/SKW-02/SKW-02_latest_report.json
+2025-11-18 12:20:49,466 - src.pipeline - INFO - Pipeline finished with template-aligned outputs.
+2025-11-18 12:45:07,911 - src.pipeline - INFO - Loading data from Test Web/Data Sensor/SKW-02.csv
+2025-11-18 12:45:08,051 - src.pipeline - INFO - Loaded Watercut data with 122 rows from /Users/oki/Documents/BE-copy/Test Web/Data Produksi/SKW-02.csv
+2025-11-18 12:45:08,051 - src.pipeline - INFO - 1/4 - Running discharge pressure prediction...
+2025-11-18 12:45:08,051 - src.pipeline - INFO - Loading discharge_pressure model from /Users/oki/Documents/BE-copy/models/knn_dp_SKW.joblib
+2025-11-18 12:45:08,651 - src.pipeline - INFO - Making predictions with discharge_pressure
+2025-11-18 12:45:08,652 - src.pipeline - WARNING - Input contains NaN values. Imputing with column means.
+2025-11-18 12:45:10,673 - src.pipeline - INFO - Exported notebook-style CSV to: /Users/oki/Documents/BE-copy/SKW Final.csv
+2025-11-18 12:45:11,112 - src.pipeline - INFO - 2/4 - Virtual rate handling...
+2025-11-18 12:45:11,125 - src.pipeline - INFO - Dropped NaN rows before VR prediction: 31129 -> 30358 rows
+2025-11-18 12:45:11,126 - src.pipeline - INFO - Running Virtual Rate prediction (notebook behavior)
+2025-11-18 12:45:11,126 - src.pipeline - INFO - Loading virtual_rate model from /Users/oki/Documents/BE-copy/models/knn_model_r.joblib
+2025-11-18 12:45:11,329 - src.pipeline - INFO - Making predictions with virtual_rate
+2025-11-18 12:45:11,414 - src.pipeline - INFO - Applying zero rule: if Amps==0 and Freq==0 then VR=0
+2025-11-18 12:45:12,630 - src.pipeline - INFO - Exported notebook-style CSV to: /Users/oki/Documents/BE-copy/SKW_final_w_Pd.csv
+2025-11-18 12:45:13,266 - src.pipeline - INFO - 3/4 - Building 30-minute resampled dataset (df_all)...
+2025-11-18 12:45:13,436 - src.pipeline - INFO - Saved df_all to: /Users/oki/Documents/BE-copy/df_all.csv
+2025-11-18 12:45:13,571 - src.pipeline - INFO - 4/4 - Computing 30-minute window slopes...
+2025-11-18 12:45:13,948 - src.pipeline - INFO - Saved slopes_df_30menit to: /Users/oki/Documents/BE-copy/slopes_df_30menit.csv
+2025-11-18 12:45:14,056 - src.pipeline - INFO - Saved X_predict_30menit to: /Users/oki/Documents/BE-copy/X_predict_30menit.csv
+2025-11-18 12:45:14,303 - src.pipeline - INFO - Loading failure_prediction model from /Users/oki/Documents/BE-copy/models/knn_tanpa SMOTE_model.pkl
+2025-11-18 12:45:14,309 - src.pipeline - INFO - Making predictions with failure_prediction
+2025-11-18 12:45:14,677 - src.pipeline - INFO - Gap detected: 23.0h between 2025-05-28 10:00:00 and 2025-05-29 09:00:00
+2025-11-18 12:45:14,682 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,787 - src.pipeline - INFO - Gap detected: 28.0h between 2025-07-26 12:00:00 and 2025-07-27 16:00:00
+2025-11-18 12:45:14,791 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,792 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-27 16:00:00 and 2025-07-27 22:00:00
+2025-11-18 12:45:14,796 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,797 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-27 22:00:00 and 2025-07-28 04:00:00
+2025-11-18 12:45:14,803 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,804 - src.pipeline - INFO - Gap detected: 4.5h between 2025-07-28 08:30:00 and 2025-07-28 13:00:00
+2025-11-18 12:45:14,809 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,810 - src.pipeline - INFO - Gap detected: 4.0h between 2025-07-28 13:00:00 and 2025-07-28 17:00:00
+2025-11-18 12:45:14,815 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,815 - src.pipeline - INFO - Gap detected: 6.0h between 2025-07-29 02:30:00 and 2025-07-29 08:30:00
+2025-11-18 12:45:14,820 - src.pipeline - INFO - No Shut-in found, marking 0 EDP as Start-up Phase
+2025-11-18 12:45:14,839 - src.pipeline - WARNING - Could not save prediction_with_features_30menit.csv: You are trying to merge on object and datetime64[ns] columns for key 'Window_Start_Time'. If you wish to proceed you should use pd.concat
+2025-11-18 12:45:14,840 - src.pipeline - INFO - Saving results to directory: test_output/SKW-02
+2025-11-18 12:45:14,841 - src.pipeline - INFO - Saving discharge_pressure predictions to: test_output/SKW-02/SKW-02_discharge_pressure_predictions.csv
+2025-11-18 12:45:14,842 - src.pipeline - WARNING - Timestamp length does not match predictions; saving without timestamp
+2025-11-18 12:45:14,938 - src.pipeline - INFO - Successfully saved discharge_pressure predictions to test_output/SKW-02/SKW-02_discharge_pressure_predictions.csv (Size: 310084 bytes)
+2025-11-18 12:45:14,938 - src.pipeline - INFO - Saving virtual_rate predictions to: test_output/SKW-02/SKW-02_virtual_rate_predictions.csv
+2025-11-18 12:45:15,118 - src.pipeline - INFO - Successfully saved virtual_rate predictions to test_output/SKW-02/SKW-02_virtual_rate_predictions.csv (Size: 909242 bytes)
+2025-11-18 12:45:15,118 - src.pipeline - INFO - Skipping raw save for failure_prediction (handled by _save_failure_results)
+2025-11-18 12:45:15,169 - src.pipeline - INFO - Saved final failure results to: test_output/SKW-02/SKW-02_failure_prediction_30min.csv
+2025-11-18 12:45:15,206 - src.pipeline - INFO - Saved notebook-style 30-minute predictions to: /Users/oki/Documents/BE-copy/prediction_results_30menit.csv
+2025-11-18 12:45:15,230 - src.pipeline - INFO - Saved notebook-style predictions to well output: test_output/SKW-02/prediction_results_30menit.csv
+2025-11-18 12:45:16,850 - src.pipeline - INFO - Saved 3-hour aggregated results to: test_output/SKW-02/result_df_3 jam.csv
+2025-11-18 12:45:16,856 - src.pipeline - INFO - Saved 3-hour aggregated results to project root: /Users/oki/Documents/BE-copy/result_df_3 jam.csv
+2025-11-18 12:45:16,858 - src.pipeline - INFO - 5/4 - Adding Indicator columns and generating latest report...
+2025-11-18 12:45:17,248 - src.pipeline - INFO - Saved 30-minute results with indicators to: test_output/SKW-02/SKW-02_indicator_30min.csv
+2025-11-18 12:45:17,255 - src.pipeline - INFO - Saved 3-hour results with indicators to: test_output/SKW-02/result_df_3jam_with_indicator.csv
+2025-11-18 12:45:17,255 - src.pipeline - INFO - Generating Latest Status and Latest Failure data for UI...
+2025-11-18 12:45:17,277 - src.pipeline - INFO - Saved latest report data to: test_output/SKW-02/SKW-02_latest_report.json
+2025-11-18 12:45:17,277 - src.pipeline - INFO - Pipeline finished with template-aligned outputs.
