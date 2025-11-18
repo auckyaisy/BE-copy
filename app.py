@@ -362,7 +362,11 @@ def _render_results(pipeline: WellAnalysisPipeline, well_name: str, zoom_start: 
                 'recommendation': recommendation_value,
             }
             group_summaries.append(summary)
-            if r['Dominant Status'] != 'Running':
+
+            # Hanya treat sebagai "failure event" kalau status dominan final (setelah
+            # override dari aggregated_lookup) bukan Running. Ini mencegah hari yang
+            # akhirnya menjadi Running ikut muncul di Daily Activity.
+            if dominant_status != 'Running':
                 detected_events.append(summary)
                 # Store latest 3-hour failure
                 if latest_failure_3hour is None or pd.to_datetime(summary['group_start']) > pd.to_datetime(latest_failure_3hour['timestamp']):
