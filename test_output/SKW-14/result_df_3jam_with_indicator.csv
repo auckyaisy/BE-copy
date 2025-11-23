@@ -1,5 +1,5 @@
 Window_Start_Time,Indicator,Dominant Status,Recommendation
-2025-06-23 15:00:00,"A and Freq 0, others constant",Electrical Downhole Problem,"NOTIFICATIONS FOR ENGINEER! 1. Verify surface equipment (VSD, transformer, junction box) to isolate downhole issue 2. Perform VSD soft shutdown to prevent reverse current damage 3. Conduct a DIFA (Dismantle Inspection and Failure Analysis"
+2025-06-23 15:00:00,,Shut-in,Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero.
 2025-06-23 18:00:00,,Running, 
 2025-06-23 21:00:00,,Running, 
 2025-06-24 00:00:00,,Running, 

@@ -1,0 +1,38 @@
+{
+  "3_hours": {
+    "latest_status": {
+      "time": "2025-10-14 15:00:00",
+      "status": "Shut-in",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
+    },
+    "latest_failure": {
+      "time": "2025-09-05 21:00:00",
+      "status": "100% Watercut",
+      "indicator": "100% WC in Prod",
+      "indicator_parsed": [],
+      "recommendation": "The Possibility Causes: Well producing 100% water—possible water breakthrough or reservoir depletion 1. Check production test and GOR trend to confirm water source 2. Inspect well completion for leaks; consider shut-in, isolation, or water-shutoff treatment"
+    }
+  },
+  "30_minutes": {
+    "latest_status": {
+      "time": "2025-10-14 16:30:00",
+      "status": "Shut-in",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": "Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero."
+    },
+    "latest_failure": {
+      "time": "2025-09-11 08:00:00",
+      "status": "Low PI",
+      "indicator": "A↓ IP↓ DP↓ R↓",
+      "indicator_parsed": [
+        "Ampere (↓): Decrease",
+        "Intake Pressure (↓): Decrease",
+        "Discharge Pressure (↓): Decrease"
+      ],
+      "recommendation": "The Possibility Causes: Well productivity less than pump design range 1. Analyze fluid level and Bottom Hole Pressure (BHP) 2. Adjust tubing wellhead pressure to bring pump rate within design rate The Possibility Causes: Restricted pump 1. Inject solvent or diluent through annulus if fluid is highly viscous 2. Use VSD “rocking mode” to remove debris"
+    }
+  }
+}

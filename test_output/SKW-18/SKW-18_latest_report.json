@@ -19,15 +19,14 @@
     "latest_failure": {
       "time": "2025-07-22 15:30:00",
       "status": "Open Choke",
-      "indicator": "A→ IP→ DP↓ MT→ Q↑",
+      "indicator": "A↓ IP↓ DP↓ MT↓ R↑",
       "indicator_parsed": [
-        "Ampere (→): Stable",
-        "Intake Pressure (→): Stable",
+        "Ampere (↓): Decrease",
+        "Intake Pressure (↓): Decrease",
         "Discharge Pressure (↓): Decrease",
-        "Motor Temperature (→): Stable",
-        "Rate (↑): Increase"
+        "Motor Temperature (↓): Decrease"
       ],
-      "recommendation": "NOTIFICATIONS FOR ENGINEER! Check pump discharge pressure and production rate, compare with historical well data"
+      "recommendation": "Check pump discharge pressure and production rate, compare with historical well data"
     }
   }
 }

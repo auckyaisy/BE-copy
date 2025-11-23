@@ -1,0 +1,54 @@
+{
+  "3_hours": {
+    "latest_status": {
+      "time": "2025-07-28 03:00:00",
+      "status": "Low PI",
+      "indicator": "A→ IP→ DP↓ Q↓",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (→): Stable",
+        "Discharge Pressure (↓): Decrease",
+        "Rate (↓): Decrease"
+      ],
+      "recommendation": "The Possibility Causes: 1. Well productivity less than pump design range 2. Restricted pump. 1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, adjust the tubing well head pressure and bring the pump production rate within design rate. 2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
+    },
+    "latest_failure": {
+      "time": "2025-07-28 03:00:00",
+      "status": "Low PI",
+      "indicator": "A→ IP→ DP↓ Q↓",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (→): Stable",
+        "Discharge Pressure (↓): Decrease",
+        "Rate (↓): Decrease"
+      ],
+      "recommendation": "The Possibility Causes: 1. Well productivity less than pump design range 2. Restricted pump. 1. Analyze the fluid level and Bottom Hole Pressure (BHP) data! If in acceptable range, adjust the tubing well head pressure and bring the pump production rate within design rate. 2. Check the possibility of restricted pump! Pumping fluids through tubing when water sources are available."
+    }
+  },
+  "30_minutes": {
+    "latest_status": {
+      "time": "2025-07-28 03:00:00",
+      "status": "Low PI",
+      "indicator": "A→ IP→ DP↓ Q↓",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (→): Stable",
+        "Discharge Pressure (↓): Decrease",
+        "Rate (↓): Decrease"
+      ],
+      "recommendation": "The Possibility Causes: Well productivity less than pump design range 1. Analyze fluid level and Bottom Hole Pressure (BHP) 2. Adjust tubing wellhead pressure to bring pump rate within design rate The Possibility Causes: Restricted pump 1. Inject solvent or diluent through annulus if fluid is highly viscous 2. Use VSD “rocking mode” to remove debris"
+    },
+    "latest_failure": {
+      "time": "2025-07-28 03:00:00",
+      "status": "Low PI",
+      "indicator": "A→ IP→ DP↓ Q↓",
+      "indicator_parsed": [
+        "Ampere (→): Stable",
+        "Intake Pressure (→): Stable",
+        "Discharge Pressure (↓): Decrease",
+        "Rate (↓): Decrease"
+      ],
+      "recommendation": "The Possibility Causes: Well productivity less than pump design range 1. Analyze fluid level and Bottom Hole Pressure (BHP) 2. Adjust tubing wellhead pressure to bring pump rate within design rate The Possibility Causes: Restricted pump 1. Inject solvent or diluent through annulus if fluid is highly viscous 2. Use VSD “rocking mode” to remove debris"
+    }
+  }
+}

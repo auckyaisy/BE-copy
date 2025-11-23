@@ -1,0 +1,32 @@
+{
+  "3_hours": {
+    "latest_status": {
+      "time": "2025-07-31 21:00:00",
+      "status": "Running",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": " "
+    }
+  },
+  "30_minutes": {
+    "latest_status": {
+      "time": "2025-07-31 23:30:00",
+      "status": "Running",
+      "indicator": "",
+      "indicator_parsed": [],
+      "recommendation": ""
+    },
+    "latest_failure": {
+      "time": "2025-07-10 00:00:00",
+      "status": "Low PI",
+      "indicator": "A↓ IP→ DP↓ Q↓",
+      "indicator_parsed": [
+        "Ampere (↓): Decrease",
+        "Intake Pressure (→): Stable",
+        "Discharge Pressure (↓): Decrease",
+        "Rate (↓): Decrease"
+      ],
+      "recommendation": "The Possibility Causes: Well productivity less than pump design range 1. Analyze fluid level and Bottom Hole Pressure (BHP) 2. Adjust tubing wellhead pressure to bring pump rate within design rate The Possibility Causes: Restricted pump 1. Inject solvent or diluent through annulus if fluid is highly viscous 2. Use VSD “rocking mode” to remove debris"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 ﻿Window_Start_Time,Indicator,Status,Recommendation
-2025-06-23 17:30:00,"A and Freq 0, others constant",Electrical Downhole Problem,"Electrical Downhole Problem suspected: 1) Verify surface equipment (VSD, step-up transformer, junction box) to confirm failure is downhole. 2) Perform a VSD soft shutdown to prevent reverse current surges. 3) Conduct a DIFA (Dismantle Inspection and Failure Analysis)."
+2025-06-23 17:30:00,,Shut-in,Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero.
 2025-06-23 18:00:00,,Shut-in,Shut-in detected. Verify operating schedule and surface conditions. Ensure Amps/Frequency are expected to be zero.
 2025-06-23 18:30:00,,Running, 
 2025-06-23 19:00:00,,Running, 
