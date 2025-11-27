@@ -91,7 +91,7 @@ class WellAnalysisPipeline:
         
         # Convert timestamp to datetime if it exists
         if 'Reading Time' in df.columns:
-            df['Reading Time'] = pd.to_datetime(df['Reading Time'])
+            df['Reading Time'] = pd.to_datetime(df['Reading Time'], format='mixed', dayfirst=False)
             df = df.sort_values('Reading Time')
         
         # Handle missing values
@@ -422,7 +422,7 @@ class WellAnalysisPipeline:
 
             # Ensure timestamp is datetime and sorted
             if 'Reading Time' in self.data.columns:
-                self.data['Reading Time'] = pd.to_datetime(self.data['Reading Time'], errors='coerce')
+                self.data['Reading Time'] = pd.to_datetime(self.data['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
                 self.data = self.data.sort_values('Reading Time')
 
             results = {}
@@ -508,7 +508,7 @@ class WellAnalysisPipeline:
             # Compute df_all (30-minute resample) identical to notebook code
             logger.info("3/4 - Building 30-minute resampled dataset (df_all)...")
             df_all = df1.copy()
-            df_all['Reading Time'] = pd.to_datetime(df_all['Reading Time'], errors='coerce')
+            df_all['Reading Time'] = pd.to_datetime(df_all['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
             df_all = (
                 df_all.set_index('Reading Time')
                       .resample('30min', origin='epoch')
@@ -531,7 +531,7 @@ class WellAnalysisPipeline:
             # 4. Compute slopes exactly as notebook
             logger.info("4/4 - Computing 30-minute window slopes...")
             df_for_slopes = df_for_slopes.copy()
-            df_for_slopes['Reading Time'] = pd.to_datetime(df_for_slopes['Reading Time'], errors='coerce')
+            df_for_slopes['Reading Time'] = pd.to_datetime(df_for_slopes['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
             df_for_slopes = df_for_slopes.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
             dup_groups = df_for_slopes.groupby('Reading Time').cumcount()
             df_for_slopes['Reading Time'] = df_for_slopes['Reading Time'] + pd.to_timedelta(dup_groups * 30, unit='s')
@@ -779,7 +779,7 @@ class WellAnalysisPipeline:
             
             # Ensure timestamp is in datetime format
             if not pd.api.types.is_datetime64_any_dtype(df['Reading Time']):
-                df['Reading Time'] = pd.to_datetime(df['Reading Time'], errors='coerce')
+                df['Reading Time'] = pd.to_datetime(df['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
             
             # Sort by time
             df = df.sort_values('Reading Time')
@@ -820,7 +820,7 @@ class WellAnalysisPipeline:
             raise ValueError("'Reading Time' column is required for resampling")
 
         df_idx = df.copy()
-        df_idx['Reading Time'] = pd.to_datetime(df_idx['Reading Time'], errors='coerce')
+        df_idx['Reading Time'] = pd.to_datetime(df_idx['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
         df_idx = df_idx.dropna(subset=['Reading Time']).set_index('Reading Time')
         # Align to :00 and :30 using origin='epoch' to snap to half-hour grid
         df_resampled = (
@@ -856,7 +856,7 @@ class WellAnalysisPipeline:
         }
 
         d = df.copy()
-        d['Reading Time'] = pd.to_datetime(d['Reading Time'], errors='coerce')
+        d['Reading Time'] = pd.to_datetime(d['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
         d = d.dropna(subset=['Reading Time']).sort_values('Reading Time').reset_index(drop=True)
         if d.empty:
             return pd.DataFrame(columns=['Window_Start_Time'] + list(use_cols_map.keys()))
@@ -1022,7 +1022,7 @@ class WellAnalysisPipeline:
         try:
             TOL = 1e-8
             df_all2 = df_all.copy()
-            df_all2['Reading Time'] = pd.to_datetime(df_all2['Reading Time'], errors='coerce')
+            df_all2['Reading Time'] = pd.to_datetime(df_all2['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
             slopes_df2 = slopes_df.copy()
             slopes_df2['Window_Start_Time'] = pd.to_datetime(slopes_df2['Window_Start_Time'], errors='coerce')
 
@@ -1076,7 +1076,7 @@ class WellAnalysisPipeline:
             # Vectorized: compute variation per window using raw df mapped to 30-min buckets
             try:
                 df_raw = self.data.copy()
-                df_raw['Reading Time'] = pd.to_datetime(df_raw['Reading Time'], errors='coerce')
+                df_raw['Reading Time'] = pd.to_datetime(df_raw['Reading Time'], format='mixed', dayfirst=False, errors='coerce')
                 df_raw = df_raw.dropna(subset=['Reading Time'])
                 df_raw['Window_Start_Time'] = df_raw['Reading Time'].dt.floor('30min')
                 present_cols = [c for c in cols_check if c in df_raw.columns]
